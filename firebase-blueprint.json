@@ -1,0 +1,380 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "Item in inventory",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "sku": { "type": "string" },
+        "barcode": { "type": "string" },
+        "type": { "type": "string", "enum": ["new", "used", "repair", "accessory"] },
+        "category": { "type": "string" },
+        "brand": { "type": "string" },
+        "costPrice": { "type": "number" },
+        "sellingPrice": { "type": "number" },
+        "stockQuantity": { "type": "number" },
+        "minStockLevel": { "type": "number" },
+        "imeiRequired": { "type": "boolean" },
+        "supplierId": { "type": "string" },
+        "vatRate": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "sku", "category", "sellingPrice", "stockQuantity"]
+    },
+    "Supplier": {
+      "title": "Supplier",
+      "description": "Vendor profile",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "contactPerson": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "emirate": { "type": "string" },
+        "trn": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "phone"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Client profile",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "address": { "type": "string" },
+        "emirate": { "type": "string" },
+        "trn": { "type": "string" },
+        "totalSpent": { "type": "number" },
+        "lastPurchaseDate": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "phone"]
+    },
+    "Sale": {
+      "title": "Sale",
+      "description": "Invoice record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "invoiceNumber": { "type": "string" },
+        "customerId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "subtotal": { "type": "number" },
+        "vatTotal": { "type": "number" },
+        "discount": { "type": "number" },
+        "grandTotal": { "type": "number" },
+        "paymentMethod": { "type": "string" },
+        "status": { "type": "string" },
+        "cashierId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["invoiceNumber", "grandTotal", "paymentMethod", "status"]
+    },
+    "Voucher": {
+      "title": "Voucher",
+      "description": "Accounting entry (Receipt/Payment/Journal)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "voucherNumber": { "type": "string" },
+        "type": { "type": "string", "enum": ["receipt", "payment", "journal"] },
+        "date": { "type": "string", "format": "date-time" },
+        "items": { "type": "array" },
+        "totalAmount": { "type": "number" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["voucherNumber", "type", "date", "totalAmount"]
+    },
+    "PurchaseInvoice": {
+      "title": "Purchase Invoice",
+      "description": "Inventory purchase from supplier",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "invoiceNumber": { "type": "string" },
+        "supplierId": { "type": "string" },
+        "subtotal": { "type": "number" },
+        "vatTotal": { "type": "number" },
+        "grandTotal": { "type": "number" },
+        "date": { "type": "string", "format": "date-time" }
+      },
+      "required": ["invoiceNumber", "supplierId", "grandTotal", "date"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Accounting entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["income", "expense"] },
+        "category": { "type": "string" },
+        "amount": { "type": "number" },
+        "description": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "paymentMethod": { "type": "string" }
+      },
+      "required": ["type", "amount", "date"]
+    },
+    "Expense": {
+      "title": "Expense",
+      "description": "Business expenses",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "category": { "type": "string" },
+        "amount": { "type": "number" },
+        "description": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "paymentMethod": { "type": "string" },
+        "reference": { "type": "string" }
+      },
+      "required": ["category", "amount", "date"]
+    },
+    "ExpenseCategory": {
+      "title": "Expense Category",
+      "description": "Category for business expenses",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name"]
+    },
+    "Repair": {
+      "title": "Repair",
+      "description": "Device repair job",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "jobId": { "type": "string" },
+        "customerId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "deviceModel": { "type": "string" },
+        "imei": { "type": "string" },
+        "issue": { "type": "string" },
+        "assignedTechnician": { "type": "string" },
+        "estimatedCost": { "type": "number" },
+        "advancePayment": { "type": "number" },
+        "balanceDue": { "type": "number" },
+        "status": { "type": "string", "enum": ["received", "diagnosing", "waiting_parts", "repairing", "testing", "ready", "delivered", "cancelled"] },
+        "receivedDate": { "type": "string", "format": "date-time" },
+        "expectedDate": { "type": "string", "format": "date-time" },
+        "completedDate": { "type": "string", "format": "date-time" },
+        "deliveredDate": { "type": "string", "format": "date-time" },
+        "notes": { "type": "string" },
+        "partsUsed": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["jobId", "customerId", "deviceModel", "issue", "status", "receivedDate"]
+    },
+    "AppUser": {
+      "title": "App User",
+      "description": "Application user account",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "username": { "type": "string" },
+        "role": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "username", "role", "isActive"]
+    },
+    "PromoVoucher": {
+      "title": "Promo Voucher",
+      "description": "Promotional campaign voucher",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string" },
+        "type": { "type": "string", "enum": ["percentage", "fixed"] },
+        "value": { "type": "number" },
+        "minPurchase": { "type": "number" },
+        "expiryDate": { "type": "string", "format": "date-time" },
+        "isActive": { "type": "boolean" },
+        "usageCount": { "type": "number" },
+        "usageLimit": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["code", "type", "value", "expiryDate"]
+    },
+    "BusinessProfile": {
+      "title": "Business Profile",
+      "description": "Company settings and branding",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "companyName": { "type": "string" },
+        "trn": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "address": { "type": "string" },
+        "logoBase64": { "type": "string" },
+        "website": { "type": "string" },
+        "termsAndConditions": { "type": "string" },
+        "footerNote": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["companyName", "trn", "email"]
+    },
+    "PerfumeBatch": {
+      "title": "Perfume Batch",
+      "description": "Fragrance formulation batch tracking record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "batchNumber": { "type": "string" },
+        "productId": { "type": "string" },
+        "productName": { "type": "string" },
+        "sku": { "type": "string" },
+        "carrierType": { "type": "string", "enum": ["oil_base", "alcohol_base", "mixed_fragrance", "other"] },
+        "manufactureDate": { "type": "string" },
+        "expiryDate": { "type": "string" },
+        "initialQuantityMl": { "type": "number" },
+        "remainingQuantityMl": { "type": "number" },
+        "costPerMl": { "type": "number" },
+        "supplierId": { "type": "string" },
+        "supplierName": { "type": "string" },
+        "locationSlot": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["batchNumber", "productId", "productName", "carrierType", "manufactureDate", "expiryDate", "initialQuantityMl", "remainingQuantityMl", "costPerMl"]
+    },
+    "ReportSchedule": {
+      "title": "Report Schedule",
+      "description": "Automated report schedule",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "frequency": { "type": "string", "enum": ["daily", "weekly", "monthly"] },
+        "recipientEmails": { "type": "array", "items": { "type": "string" } },
+        "reportTypes": { "type": "array", "items": { "type": "string", "enum": ["sales_analytics", "low_stock"] } },
+        "lastRunAt": { "type": "string" },
+        "nextRunAt": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "frequency", "recipientEmails", "reportTypes", "nextRunAt", "isActive"]
+    },
+    "ReportLog": {
+      "title": "Report Log",
+      "description": "Log of a generated report",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "scheduleId": { "type": "string" },
+        "scheduleName": { "type": "string" },
+        "reportType": { "type": "string" },
+        "generatedAt": { "type": "string" },
+        "salesCount": { "type": "number" },
+        "lowStockCount": { "type": "number" },
+        "csvContent": { "type": "string" },
+        "fileName": { "type": "string" },
+        "recipientEmails": { "type": "array", "items": { "type": "string" } },
+        "triggeredBy": { "type": "string", "enum": ["automatic", "manual"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["reportType", "generatedAt", "salesCount", "lowStockCount", "csvContent", "fileName", "triggeredBy"]
+    },
+    "Shift": {
+      "title": "Shift",
+      "description": "Staff work shift scheduling and attendance record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "date": { "type": "string" },
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" },
+        "role": { "type": "string" },
+        "status": { "type": "string", "enum": ["scheduled", "present", "absent", "late"] },
+        "checkInTime": { "type": "string", "format": "date-time" },
+        "checkOutTime": { "type": "string", "format": "date-time" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userName", "date", "startTime", "endTime", "role", "status"]
+    },
+    "Consultation": {
+      "title": "Consultation",
+      "description": "Perfumer consultation booking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "perfumerId": { "type": "string" },
+        "perfumerName": { "type": "string" },
+        "customerId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "date": { "type": "string" },
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" },
+        "status": { "type": "string", "enum": ["available", "booked", "completed", "cancelled"] },
+        "fee": { "type": "number" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["perfumerId", "perfumerName", "customerId", "customerName", "date", "startTime", "endTime", "status", "fee"]
+    },
+    "CommissionPayout": {
+      "title": "Commission Payout",
+      "description": "Staff commission payout log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "amount": { "type": "number" },
+        "dateRangeStart": { "type": "string" },
+        "dateRangeEnd": { "type": "string" },
+        "salesTotal": { "type": "number" },
+        "consultationsTotal": { "type": "number" },
+        "payoutDate": { "type": "string" },
+        "status": { "type": "string", "enum": ["paid", "pending"] },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userName", "amount", "dateRangeStart", "dateRangeEnd", "salesTotal", "consultationsTotal", "payoutDate", "status"]
+    }
+  },
+  "firestore": {
+    "products": { "schema": "Product", "description": "Inventory list" },
+    "customers": { "schema": "Customer", "description": "Customer profiles" },
+    "suppliers": { "schema": "Supplier", "description": "Vendor profiles" },
+    "sales": { "schema": "Sale", "description": "Sales history" },
+    "purchases": { "schema": "PurchaseInvoice", "description": "Purchase history" },
+    "vouchers": { "schema": "Voucher", "description": "Accounting vouchers" },
+    "promo_vouchers": { "schema": "PromoVoucher", "description": "Promotional vouchers" },
+    "transactions": { "schema": "Transaction", "description": "Accounting ledgers" },
+    "expenses": { "schema": "Expense", "description": "Business expenses" },
+    "expense_categories": { "schema": "ExpenseCategory", "description": "Expense categories" },
+    "repairs": { "schema": "Repair", "description": "Repair jobs" },
+    "users": { "schema": "AppUser", "description": "App users" },
+    "settings": { "schema": "BusinessProfile", "description": "App settings" },
+    "batches": { "schema": "PerfumeBatch", "description": "Perfume batches tracking" },
+    "report_schedules": { "schema": "ReportSchedule", "description": "Automated report schedules" },
+    "report_logs": { "schema": "ReportLog", "description": "Audit logs of generated reports" },
+    "shifts": { "schema": "Shift", "description": "Work shifts and attendance logs" },
+    "consultations": { "schema": "Consultation", "description": "Bespoke perfume consultations" },
+    "commission_payouts": { "schema": "CommissionPayout", "description": "Commissions paid to staff" }
+  }
+}

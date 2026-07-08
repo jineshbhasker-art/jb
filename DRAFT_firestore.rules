@@ -1,0 +1,105 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() { return request.auth != null; }
+    function isVerified() { return isSignedIn() && request.auth.token.email_verified == true; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    
+    // Bootstrapped Admin
+    function isAdmin() { 
+      return isVerified() && (
+        request.auth.token.email == 'jinzstallionz@gmail.com' || 
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // --- Validation Blueprints ---
+
+    function isValidProduct(data) {
+      return data.keys().hasAll(['name', 'sku', 'category', 'sellingPrice', 'stockQuantity']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
+             data.sku is string && data.sku.size() > 0 && data.sku.size() <= 50 &&
+             data.category is string && data.category.size() > 0 && data.category.size() <= 100 &&
+             data.sellingPrice is number && data.sellingPrice >= 0 &&
+             data.stockQuantity is number &&
+             (data.get('costPrice', 0) is number) &&
+             (data.get('vatRate', 0.05) is number);
+    }
+
+    function isValidSale(data) {
+      return data.keys().hasAll(['invoiceNumber', 'grandTotal', 'paymentMethod', 'status', 'cashierId', 'createdAt']) &&
+             data.invoiceNumber is string && data.invoiceNumber.matches('^AQM-[0-9]{4}-[0-9]{4}$') &&
+             data.grandTotal is number && data.grandTotal >= 0 &&
+             data.paymentMethod in ['cash', 'card', 'bank_transfer', 'cheque'] &&
+             data.status in ['completed', 'pending', 'cancelled', 'refunded'] &&
+             data.cashierId == request.auth.uid &&
+             data.createdAt == request.time;
+    }
+
+    function isValidCustomer(data) {
+      return data.keys().hasAll(['name', 'phone']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.phone is string && data.phone.size() >= 7 && data.phone.size() <= 20;
+    }
+
+    function isValidTransaction(data) {
+      return data.keys().hasAll(['type', 'amount', 'date']) &&
+             data.type in ['income', 'expense'] &&
+             data.amount is number && data.amount != 0 &&
+             data.date == request.time;
+    }
+
+    // --- Collection Rules ---
+
+    // Products
+    match /products/{productId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin() && isValidProduct(incoming()) && isValidId(productId);
+      allow update: if isAdmin() && isValidProduct(incoming()) && (
+        // Standard Update
+        incoming().diff(existing()).affectedKeys().hasOnly(['name', 'sku', 'category', 'brand', 'costPrice', 'sellingPrice', 'stockQuantity', 'minStockLevel', 'imeiRequired', 'vatRate', 'isActive', 'updatedAt'])
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Sales
+    match /sales/{saleId} {
+      allow read: if isSignedIn() && (isAdmin() || existing().cashierId == request.auth.uid);
+      allow list: if isSignedIn() && (isAdmin() || resource.data.cashierId == request.auth.uid);
+      allow create: if isVerified() && isValidSale(incoming()) && isValidId(saleId);
+      allow update: if isAdmin(); // Terminal State: Only admins should modify historical sales
+      allow delete: if false;
+    }
+
+    // Customers
+    match /customers/{customerId} {
+      allow read: if isSignedIn();
+      allow create: if isVerified() && isValidCustomer(incoming()) && isValidId(customerId);
+      allow update: if isVerified() && isValidCustomer(incoming()) && (
+        incoming().diff(existing()).affectedKeys().hasAny(['name', 'phone', 'email', 'address', 'emirate', 'trn', 'totalSpent', 'lastPurchaseDate'])
+      );
+    }
+
+    // Transactions
+    match /transactions/{transactionId} {
+      allow read: if isAdmin();
+      allow create: if isVerified() && isValidTransaction(incoming()) && isValidId(transactionId);
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // Admins Collection
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+  }
+}

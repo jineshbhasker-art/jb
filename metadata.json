@@ -1,0 +1,10 @@
+{
+  "name": "SCENTS & SOULS PERFUME LAB",
+  "description": "Advanced Retail POS system for business management, featuring inventory, accounting, VAT compliance, and custom business profile branding.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
