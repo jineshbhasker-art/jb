@@ -23,22 +23,40 @@ import { ProductType, Sale, PurchaseInvoice, Voucher, BusinessProfile } from '..
 import { QRCodeSVG } from 'qrcode.react';
 
 interface PrintTemplatesProps {
-  type: 'sales_invoice' | 'purchase_invoice' | 'payment_voucher' | 'receipt_voucher';
+  type?: 'sales_invoice' | 'purchase_invoice' | 'payment_voucher' | 'receipt_voucher';
+  invoiceType?: 'sales' | 'purchases' | 'payment' | 'receipt' | string;
   data: any; // Can be Sale, PurchaseInvoice, or Voucher
-  profile: BusinessProfile | null;
+  profile?: BusinessProfile | null;
+  businessProfile?: BusinessProfile | null;
   isThermal?: boolean;
 }
 
-export const PrintTemplates = React.forwardRef<HTMLDivElement, PrintTemplatesProps>(({ type, data, profile, isThermal = false }, ref) => {
+export const PrintTemplates = React.forwardRef<HTMLDivElement, PrintTemplatesProps>(({ 
+  type: propType, 
+  invoiceType,
+  data, 
+  profile: propProfile, 
+  businessProfile, 
+  isThermal = false 
+}, ref) => {
+  const type = propType || (
+    invoiceType === 'sales' ? 'sales_invoice' :
+    invoiceType === 'purchases' ? 'purchase_invoice' :
+    invoiceType === 'payment' ? 'payment_voucher' :
+    invoiceType === 'receipt' ? 'receipt_voucher' :
+    undefined
+  );
+  const profile = propProfile || businessProfile;
+
   // Safe defaults
-  const compName = profile?.companyName || 'SCENTS & SOULS PERFUME LAB';
-  const trn = profile?.trn || '100342981500003';
+  const compName = profile?.companyName || 'RRV PERFUME';
+  const trn = profile?.trn || '100492817200003';
   const phone = profile?.phone || '+971 4 321 0987';
-  const email = profile?.email || 'lab@scentsandsouls.ae';
-  const address = profile?.address || 'Luxury Boulevard, Box 1124, Dubai, UAE';
-  const website = profile?.website || 'www.scentsandsouls.ae';
-  const terms = profile?.termsAndConditions || '1. Items sold are non-refundable after 3 days.\n2. Repair services carry a 30-day warranty.\n3. Tax compliance verified under UAE FTA regulations.';
-  const footerNote = profile?.footerNote || 'Subject to UAE Federal Tax Authority Regulations';
+  const email = profile?.email || 'info@rrvperfume.com';
+  const address = profile?.address || 'RRV TRADING LLC, Business Bay, Dubai, UAE';
+  const website = profile?.website || 'www.rrvperfume.com';
+  const terms = profile?.termsAndConditions || '1. Items sold are non-refundable after 3 days.\n2. Artisanal perfume concentrates carry a 30-day guarantee.\n3. Tax compliance verified under UAE FTA regulations.';
+  const footerNote = profile?.footerNote || 'RRV PERFUME • A Division of RRV TRADING LLC';
   const logo = profile?.logoBase64 || '';
   
   const selectedA4 = profile?.selectedA4Template || 'corporate';
@@ -1480,7 +1498,7 @@ export const PrintTemplates = React.forwardRef<HTMLDivElement, PrintTemplatesPro
       {/* Small mini-footer that displays the selected template system note */}
       <div className="text-[7px] text-gray-300 font-mono tracking-widest uppercase mt-12 text-center border-t border-gray-50 pt-4 flex justify-between">
         <span>Template: {selectedA4.toUpperCase()} Layout Suite</span>
-        <span>Scent & Soul Registry Hub</span>
+        <span>RRV Perfume Registry Hub</span>
         <span>Secure ID: {details.number}</span>
       </div>
     </div>

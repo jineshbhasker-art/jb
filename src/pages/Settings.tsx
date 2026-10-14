@@ -33,7 +33,16 @@ import {
   UserX,
   Trash2,
   X,
-  Plus
+  Plus,
+  Sparkles,
+  Palette,
+  Image,
+  Copy,
+  Check,
+  Download,
+  ExternalLink,
+  Smartphone,
+  RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -55,7 +64,7 @@ import { cn, generateBarcode } from '../lib/utils';
 import { BusinessProfile, ProductType, Product, ConcentrationAlertRule } from '../types';
 import { PrintTemplates } from '../components/PrintTemplates';
 import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
+import { jsPDF } from 'jspdf';
 import { useAuth } from '../AuthContext';
 import { Fingerprint } from 'lucide-react';
 import { 
@@ -423,7 +432,8 @@ function UserManagementSection() {
 }
 
 export default function Settings() {
-  const [activeTab, setActiveTab] = React.useState<'business' | 'pos' | 'localization' | 'data' | 'alerts' | 'print'>('business');
+  const { calibration: sysCalibration } = useAuth();
+  const [activeTab, setActiveTab] = React.useState<'business' | 'pos' | 'localization' | 'data' | 'alerts' | 'print' | 'branding'>('business');
   const [profile, setProfile] = React.useState<Partial<BusinessProfile>>({
     companyName: '',
     trn: '',
@@ -452,6 +462,103 @@ export default function Settings() {
   const [saving, setSaving] = React.useState(false);
   const [message, setMessage] = React.useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [alertRules, setAlertRules] = React.useState<ConcentrationAlertRule[]>([]);
+
+  // Brand Kit & Media Presets States & Handlers
+  const [copiedId, setCopiedId] = React.useState<string | null>(null);
+  const [updatingInventory, setUpdatingInventory] = React.useState(false);
+  const [inventoryMessage, setInventoryMessage] = React.useState<string | null>(null);
+
+  const handleCopyLink = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2500);
+  };
+
+  const handleApplyPlaceholderToInventory = async (imageUrl: string, placeholderName: string) => {
+    setUpdatingInventory(true);
+    setInventoryMessage(null);
+    try {
+      const all = await productsService.getAll() || [];
+      const withoutImage = all.filter(p => !p.image);
+      
+      if (withoutImage.length === 0) {
+        setInventoryMessage(`PERFUME STOCKS PERFECT: All active inventory items already have customized artwork!`);
+        setTimeout(() => setInventoryMessage(null), 5000);
+        return;
+      }
+
+      let count = 0;
+      for (const p of withoutImage) {
+        await productsService.update(p.id, { image: imageUrl });
+        count++;
+      }
+
+      setInventoryMessage(`ADOPTED SUCCESSFUL: Applied "${placeholderName}" to ${count} product(s) without artwork!`);
+      setTimeout(() => setInventoryMessage(null), 6000);
+    } catch (err) {
+      console.error('Error applying placeholder to inventory:', err);
+      setInventoryMessage('SYNC LATENCY ERROR: Could not write placeholders to inventory nodes.');
+      setTimeout(() => setInventoryMessage(null), 5000);
+    } finally {
+      setUpdatingInventory(false);
+    }
+  };
+
+  const brandPresets = [
+    {
+      id: 'amber-gold',
+      name: 'Royal Amber Gold',
+      desc: 'Deep warm tones of aged amber, royal gold, and rich smoky agarwood notes.',
+      primaryColor: '#1C1917',
+      accentColor: '#C5A059',
+      fontFamily: 'sans',
+      selectedA4Template: 'elite',
+      selectedThermalTemplate: 'premium'
+    },
+    {
+      id: 'midnight-oud',
+      name: 'Midnight Oud Black',
+      desc: 'Sleek dark minimalist layout with cool futuristic violet accents.',
+      primaryColor: '#0A0A0A',
+      accentColor: '#8B5CF6',
+      fontFamily: 'mono',
+      selectedA4Template: 'tech',
+      selectedThermalTemplate: 'premium'
+    },
+    {
+      id: 'jasmine-rose',
+      name: 'Imperial Jasmine Rose',
+      desc: 'Velvety plum elegance with fresh romantic rose absolute highlight shades.',
+      primaryColor: '#180815',
+      accentColor: '#F43F5E',
+      fontFamily: 'sans',
+      selectedA4Template: 'serif',
+      selectedThermalTemplate: 'standard'
+    },
+    {
+      id: 'bergamot-white',
+      name: 'Bergamot Fresh White',
+      desc: 'Crisp, airy, and hyper-clean studio branding with deep teal zest accents.',
+      primaryColor: '#F4F4F5',
+      accentColor: '#0D9488',
+      fontFamily: 'sans',
+      selectedA4Template: 'swiss',
+      selectedThermalTemplate: 'compact'
+    }
+  ];
+
+  const handleApplyPreset = (preset: typeof brandPresets[0]) => {
+    setProfile(prev => ({
+      ...prev,
+      primaryColor: preset.primaryColor,
+      accentColor: preset.accentColor,
+      fontFamily: preset.fontFamily,
+      selectedA4Template: preset.selectedA4Template,
+      selectedThermalTemplate: preset.selectedThermalTemplate
+    }));
+    setMessage({ type: 'success', text: `PRESET "${preset.name.toUpperCase()}" ADOPTED: Click "Save Changes" or "Force Sync" below to permanently write to corporate database.` });
+    setTimeout(() => setMessage(null), 5000);
+  };
 
   React.useEffect(() => {
     const unsub = concentrationAlertRulesService.subscribe((rules) => {
@@ -1498,8 +1605,48 @@ export default function Settings() {
   React.useEffect(() => {
     const fetchProfile = async () => {
       const data = await businessProfileService.get();
+      const defaultProfile = {
+        companyName: 'RRV PERFUME',
+        trn: '100492817200003',
+        phone: '+971 4 321 0987',
+        email: 'info@rrvperfume.com',
+        address: 'RRV TRADING LLC, Business Bay, Dubai, UAE',
+        website: 'www.rrvperfume.com',
+        termsAndConditions: '1. Items sold are non-refundable after 3 days.\n2. Artisanal perfume concentrates carry a 30-day guarantee.',
+        footerNote: 'RRV PERFUME • A Division of RRV TRADING LLC',
+        promoPrefix: 'https://rrvperfume.com/promo/',
+        selectedA4Template: 'corporate',
+        selectedThermalTemplate: 'standard',
+        primaryColor: '#000000',
+        accentColor: '#C5A059',
+        showLogo: true,
+        showSignatureLine: true,
+        showVatSummary: true,
+        thermalWidth: 80,
+        fontFamily: 'sans',
+        autoSaveBackup: false,
+        autoSaveIntervalMinutes: 30
+      };
+
       if (data) {
-        setProfile(data);
+        const isOldBranding = !data.companyName || data.companyName.includes('Scent & Soul');
+        const resolvedName = isOldBranding ? 'RRV PERFUME' : data.companyName;
+        const resolvedFooter = isOldBranding ? 'RRV PERFUME • A Division of RRV TRADING LLC' : (data.footerNote || 'RRV PERFUME • A Division of RRV TRADING LLC');
+
+        const updated = {
+          ...defaultProfile,
+          ...data,
+          companyName: resolvedName,
+          address: isOldBranding ? 'RRV TRADING LLC, Business Bay, Dubai, UAE' : (data.address || 'RRV TRADING LLC, Business Bay, Dubai, UAE'),
+          footerNote: resolvedFooter
+        };
+        setProfile(updated);
+        if (isOldBranding) {
+          businessProfileService.save(updated).catch(() => {});
+        }
+      } else {
+        setProfile(defaultProfile);
+        await businessProfileService.save(defaultProfile);
       }
       setLoading(false);
     };
@@ -1627,6 +1774,7 @@ export default function Settings() {
 
   const tabs = [
     { id: 'business', label: 'Business Profile', icon: Building2 },
+    { id: 'branding', label: 'Brand Kits & Media', icon: Sparkles },
     { id: 'pos', label: 'POS Terminal', icon: Monitor },
     { id: 'localization', label: 'Regional Settings', icon: Globe },
     { id: 'print', label: 'Print Customizer', icon: Printer },
@@ -1643,7 +1791,7 @@ export default function Settings() {
              System Control Interface • V2.4.0-STABLE
           </p>
         </div>
-        <div className="flex items-center gap-2 bg-gray-100 p-1.5 rounded-[2rem] border border-gray-100 shadow-inner">
+        <div className="flex items-center gap-2 bg-gray-100 p-1.5 rounded-[2rem] border border-gray-100 shadow-inner overflow-x-auto no-scrollbar max-w-full flex-nowrap whitespace-nowrap shrink-0">
            {tabs.map(tab => (
              <button 
                key={tab.id}
@@ -1786,6 +1934,277 @@ export default function Settings() {
                 </motion.div>
               )}
 
+              {activeTab === 'branding' && (
+                <motion.div 
+                  key="branding"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  className="space-y-12"
+                >
+                  {/* Presets section */}
+                  <section className="advanced-3d-card p-12 bg-white space-y-10">
+                    <div className="flex justify-between items-start flex-wrap gap-4">
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-4">
+                          <div className="w-1.5 h-6 bg-black rounded-full" />
+                          <h2 className="text-xl font-black uppercase tracking-tight">Corporate Aesthetic Presets</h2>
+                        </div>
+                        <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Adopt a complete luxury visual theme that synchronizes across your receipts, invoices, and templates.</p>
+                      </div>
+                      <span className="px-3 py-1 bg-black text-white text-[8px] font-black uppercase tracking-widest rounded-full">DESIGN STUDIO</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                      {brandPresets.map(preset => {
+                        const isCurrent = profile.primaryColor === preset.primaryColor && profile.accentColor === preset.accentColor;
+                        return (
+                          <div 
+                            key={preset.id}
+                            className={`border rounded-[2rem] p-6 flex flex-col justify-between space-y-6 transition-all duration-300 relative overflow-hidden ${
+                              isCurrent ? 'border-black ring-1 ring-black bg-gray-50/50 shadow-md' : 'border-gray-200 hover:border-gray-400 bg-white'
+                            }`}
+                          >
+                            <div className="space-y-4">
+                              <div className="flex justify-between items-center">
+                                <h3 className="text-xs font-black uppercase tracking-wider">{preset.name}</h3>
+                                {isCurrent && (
+                                  <span className="px-2.5 py-1 bg-green-500 text-white text-[7px] font-black uppercase tracking-widest rounded-full flex items-center gap-1">
+                                    <CheckCircle2 size={8} /> Active
+                                  </span>
+                                )}
+                              </div>
+                              
+                              <p className="text-[9px] text-gray-400 leading-relaxed font-semibold uppercase">{preset.desc}</p>
+                              
+                              {/* Color swatches */}
+                              <div className="flex items-center gap-2">
+                                <div className="flex -space-x-2">
+                                  <div 
+                                    className="w-8 h-8 rounded-full border border-white shadow-sm" 
+                                    style={{ backgroundColor: preset.primaryColor }}
+                                  />
+                                  <div 
+                                    className="w-8 h-8 rounded-full border border-white shadow-sm" 
+                                    style={{ backgroundColor: preset.accentColor }}
+                                  />
+                                </div>
+                                <div className="text-[8px] font-mono text-gray-400 uppercase font-black">
+                                  {preset.primaryColor} • {preset.accentColor}
+                                </div>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleApplyPreset(preset)}
+                              className={`w-full py-3.5 rounded-xl font-black text-[8px] uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2 ${
+                                isCurrent 
+                                  ? 'bg-gray-100 text-gray-400 cursor-default' 
+                                  : 'bg-black text-white hover:bg-black/90 active:scale-95'
+                              }`}
+                            >
+                              <Palette size={10} /> {isCurrent ? 'ADOPTED' : 'ADOPT THEME'}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+
+                  {/* Product Placeholders */}
+                  <section className="advanced-3d-card p-12 bg-white space-y-10">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-4">
+                        <div className="w-1.5 h-6 bg-[#C5A059] rounded-full" />
+                        <h2 className="text-xl font-black uppercase tracking-tight">Luxury Product Placeholders</h2>
+                      </div>
+                      <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">High-quality fragrance, ambiance, and ingredient photography placeholders designed for your perfume catalog.</p>
+                    </div>
+
+                    {inventoryMessage && (
+                      <div className="p-4 bg-black text-[#C5A059] border border-[#C5A059]/20 rounded-2xl flex items-center gap-3 text-[9px] font-black uppercase tracking-widest animate-pulse">
+                        <Sparkles size={12} />
+                        {inventoryMessage}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                      {[
+                        {
+                          id: 'photo-bottle',
+                          name: 'Bespoke Scent Flacon',
+                          url: 'https://images.unsplash.com/photo-1594035910387-fea47794261f?auto=format&fit=crop&q=80&w=600&h=600',
+                          type: 'Product Photography',
+                          size: '1:1 Ratio • 600x600 px',
+                          desc: 'Sleek dark flacon standing on mineral rock slabs, perfect for luxurious ouds and heavy spice extractions.'
+                        },
+                        {
+                          id: 'photo-spray',
+                          name: 'Minimalist Amber Apothecary',
+                          url: 'https://images.unsplash.com/photo-1603006905003-be475563bc59?auto=format&fit=crop&q=80&w=600&h=600',
+                          type: 'Product Photography',
+                          size: '1:1 Ratio • 600x600 px',
+                          desc: 'Apothecary glassware and clean textured labels, ideal for organic room mists and home ambiance collections.'
+                        },
+                        {
+                          id: 'photo-ingredients',
+                          name: 'Raw Botanical Ingredients',
+                          url: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&q=80&w=600&h=600',
+                          type: 'Ingredient Abstract',
+                          size: '1:1 Ratio • 600x600 px',
+                          desc: 'Jasmine extracts, pure almond milk, and raw essential oils, perfect for raw oil blends and bespoke infusions.'
+                        }
+                      ].map(photo => (
+                        <div key={photo.id} className="border border-gray-200 rounded-[2.5rem] bg-gray-50/30 p-6 space-y-6 flex flex-col justify-between hover:shadow-lg transition-all duration-300">
+                          <div className="space-y-4">
+                            {/* Image container with referrerPolicy */}
+                            <div className="aspect-square w-full rounded-[1.75rem] overflow-hidden bg-gray-100 border border-gray-200 relative group">
+                              <img 
+                                src={photo.url} 
+                                alt={photo.name} 
+                                referrerPolicy="no-referrer"
+                                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                              />
+                              <div className="absolute top-4 left-4 bg-black/75 backdrop-blur-sm text-[#C5A059] text-[7px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full">
+                                {photo.type}
+                              </div>
+                            </div>
+
+                            <div className="space-y-2">
+                              <div className="flex justify-between items-start">
+                                <h3 className="text-xs font-black uppercase tracking-wide">{photo.name}</h3>
+                                <span className="text-[7px] font-mono text-gray-400 uppercase tracking-widest font-bold">{photo.size}</span>
+                              </div>
+                              <p className="text-[9px] text-gray-400 leading-relaxed font-semibold uppercase">{photo.desc}</p>
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleCopyLink(photo.url, photo.id)}
+                                className="py-3 rounded-xl border border-gray-200 hover:border-black text-black font-black text-[8px] uppercase tracking-[0.15em] transition-all flex items-center justify-center gap-1.5 active:scale-95 bg-white"
+                              >
+                                {copiedId === photo.id ? <CheckCircle2 size={10} className="text-green-500" /> : <Copy size={10} />}
+                                {copiedId === photo.id ? 'COPIED!' : 'COPY URL'}
+                              </button>
+                              
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setProfile(prev => ({ ...prev, logoBase64: photo.url }));
+                                  setMessage({ type: 'success', text: `BRAND LOGO UPDATED: Adopted "${photo.name.toUpperCase()}" as company logo. Force Sync to finalize.` });
+                                  setTimeout(() => setMessage(null), 5000);
+                                }}
+                                className="py-3 rounded-xl border border-gray-200 hover:border-black text-black font-black text-[8px] uppercase tracking-[0.15em] transition-all flex items-center justify-center gap-1.5 active:scale-95 bg-white"
+                              >
+                                <Building2 size={10} /> SET LOGO
+                              </button>
+                            </div>
+
+                            <button
+                              type="button"
+                              disabled={updatingInventory}
+                              onClick={() => handleApplyPlaceholderToInventory(photo.url, photo.name)}
+                              className="w-full py-3.5 bg-black text-white hover:bg-black/90 disabled:opacity-50 rounded-xl font-black text-[8px] uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2 active:scale-95"
+                            >
+                              <Plus size={10} /> ADOPT FOR INVENTORY
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+
+                  {/* Profile Banners */}
+                  <section className="advanced-3d-card p-12 bg-white space-y-10">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-4">
+                        <div className="w-1.5 h-6 bg-[#C5A059] rounded-full" />
+                        <h2 className="text-xl font-black uppercase tracking-tight">Social Media & Profile Banners</h2>
+                      </div>
+                      <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Widescreen banner templates optimized for Instagram profiles, store fronts, and digital catalog headers.</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                      {[
+                        {
+                          id: 'banner-dark',
+                          name: 'Midnight Minerals & Gold',
+                          url: 'https://images.unsplash.com/photo-1508615070457-7baeba4003ab?auto=format&fit=crop&q=80&w=1200&h=675',
+                          size: '16:9 • 1200x675 px',
+                          channel: 'Twitter/X Cover • Instagram Grid Background',
+                          desc: 'Moody textured stone with floating gold particles and high-contrast shadows. Perfect for a premium dark storefront.'
+                        },
+                        {
+                          id: 'banner-light',
+                          name: 'Silk Dunes & Sand',
+                          url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=1200&h=675',
+                          size: '16:9 • 1200x675 px',
+                          channel: 'LinkedIn Header • Facebook Brand Cover',
+                          desc: 'Elegant organic waves of light sand-colored silk and clean flowing geometry. Ideal for modern neutral tones.'
+                        },
+                        {
+                          id: 'banner-botanical',
+                          name: 'Shimmering Starry Mist',
+                          url: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&q=80&w=1200&h=675',
+                          size: '16:9 • 1200x675 px',
+                          channel: 'E-commerce Header • TikTok Banner',
+                          desc: 'A gorgeous ethereal ambient scene of glowing warm highlights. Ideal for showcasing digital brand summaries.'
+                        }
+                      ].map(banner => (
+                        <div key={banner.id} className="border border-gray-200 rounded-[2.5rem] bg-gray-50/30 p-6 space-y-6 flex flex-col justify-between hover:shadow-lg transition-all duration-300">
+                          <div className="space-y-4">
+                            {/* Widescreen image container with referrerPolicy */}
+                            <div className="aspect-[16/9] w-full rounded-[1.75rem] overflow-hidden bg-gray-100 border border-gray-200 relative group">
+                              <img 
+                                src={banner.url} 
+                                alt={banner.name} 
+                                referrerPolicy="no-referrer"
+                                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                              />
+                              <div className="absolute top-4 left-4 bg-black/75 backdrop-blur-sm text-[#C5A059] text-[7px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full">
+                                {banner.size}
+                              </div>
+                            </div>
+
+                            <div className="space-y-2">
+                              <div className="flex justify-between items-start flex-col gap-1">
+                                <h3 className="text-xs font-black uppercase tracking-wide">{banner.name}</h3>
+                                <span className="text-[7px] font-mono text-gray-400 uppercase tracking-widest font-bold">{banner.channel}</span>
+                              </div>
+                              <p className="text-[9px] text-gray-400 leading-relaxed font-semibold uppercase">{banner.desc}</p>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleCopyLink(banner.url, banner.id)}
+                              className="py-3.5 rounded-xl border border-gray-200 hover:border-black text-black font-black text-[8px] uppercase tracking-[0.15em] transition-all flex items-center justify-center gap-1.5 active:scale-95 bg-white"
+                            >
+                              {copiedId === banner.id ? <CheckCircle2 size={10} className="text-green-500" /> : <Copy size={10} />}
+                              {copiedId === banner.id ? 'COPIED!' : 'COPY URL'}
+                            </button>
+                            
+                            <a
+                              href={banner.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="py-3.5 rounded-xl border border-gray-200 hover:border-black text-black font-black text-[8px] uppercase tracking-[0.15em] transition-all flex items-center justify-center gap-1.5 active:scale-95 bg-white text-center"
+                            >
+                              <ExternalLink size={10} /> VIEW HIGH-RES
+                            </a>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                </motion.div>
+              )}
+
               {activeTab === 'pos' && (
                 <motion.div 
                   key="pos"
@@ -1862,6 +2281,70 @@ export default function Settings() {
                            <div className="w-4 h-4 bg-green-500 rounded-full shadow-[0_0_10px_rgba(34,197,94,0.5)]" />
                          </div>
                        ))}
+                    </div>
+                  </section>
+
+                  <section className="advanced-3d-card p-12 bg-white space-y-12 text-left">
+                    <div className="flex items-center gap-4">
+                      <div className="w-1.5 h-6 bg-[#C5A059] rounded-full" />
+                      <h2 className="text-xl font-black uppercase tracking-tight">View Calibration & Adaptability</h2>
+                    </div>
+                    
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-relaxed">
+                      Calibrate the interface to render as a dedicated mobile productivity app, a multi-column desktop screen, or let the engine calibrate automatically.
+                    </p>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <button
+                        type="button"
+                        onClick={() => sysCalibration.setCalibrationMode('auto')}
+                        className={cn(
+                          "p-8 rounded-[2rem] border transition-all text-left flex flex-col gap-4 relative overflow-hidden group",
+                          sysCalibration.calibrationMode === 'auto' ? "bg-black text-white border-black" : "bg-gray-50 text-gray-400 border-transparent hover:border-gray-200"
+                        )}
+                      >
+                        <RefreshCw size={24} className={cn(sysCalibration.calibrationMode === 'auto' && "animate-spin-slow")} />
+                        <div>
+                          <div className={cn("text-[11px] font-black uppercase tracking-widest", sysCalibration.calibrationMode === 'auto' ? "text-white" : "text-black")}>Auto-Calibration</div>
+                          <p className="text-[8.5px] mt-2 uppercase tracking-wide leading-normal">
+                            System listens to orientation and window boundaries to auto-switch workflows.
+                          </p>
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => sysCalibration.setCalibrationMode('desktop')}
+                        className={cn(
+                          "p-8 rounded-[2rem] border transition-all text-left flex flex-col gap-4 relative overflow-hidden group",
+                          sysCalibration.calibrationMode === 'desktop' ? "bg-black text-white border-black" : "bg-gray-50 text-gray-400 border-transparent hover:border-gray-200"
+                        )}
+                      >
+                        <Monitor size={24} />
+                        <div>
+                          <div className={cn("text-[11px] font-black uppercase tracking-widest", sysCalibration.calibrationMode === 'desktop' ? "text-white" : "text-black")}>Force Desktop View</div>
+                          <p className="text-[8.5px] mt-2 uppercase tracking-wide leading-normal">
+                            Bypasses viewport boundaries to render full-scale sidebar, dense tables, and permanent registers.
+                          </p>
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => sysCalibration.setCalibrationMode('mobile')}
+                        className={cn(
+                          "p-8 rounded-[2rem] border transition-all text-left flex flex-col gap-4 relative overflow-hidden group",
+                          sysCalibration.calibrationMode === 'mobile' ? "bg-black text-white border-black" : "bg-gray-50 text-gray-400 border-transparent hover:border-gray-200"
+                        )}
+                      >
+                        <Smartphone size={24} />
+                        <div>
+                          <div className={cn("text-[11px] font-black uppercase tracking-widest", sysCalibration.calibrationMode === 'mobile' ? "text-white" : "text-black")}>Force Mobile View</div>
+                          <p className="text-[8.5px] mt-2 uppercase tracking-wide leading-normal">
+                            Forces high-contrast bottom navigation workflows and slide-in drawer registers.
+                          </p>
+                        </div>
+                      </button>
                     </div>
                   </section>
                 </motion.div>
@@ -2246,11 +2729,16 @@ export default function Settings() {
                             <button 
                               type="button"
                               onClick={async () => {
-                                 const element = document.getElementById('a4-print-preview-content');
+                                 const element = document.getElementById('a4-print-area') || document.getElementById('a4-print-preview-content');
                                  if (!element) return;
                                  setSaving(true);
                                  try {
-                                    const canvas = await html2canvas(element, { scale: 2, useCORS: true });
+                                    const canvas = await html2canvas(element, { 
+                                       scale: 2, 
+                                       useCORS: true,
+                                       backgroundColor: '#ffffff',
+                                       logging: false
+                                    });
                                     const imgData = canvas.toDataURL('image/png');
                                     const pdf = new jsPDF('p', 'mm', 'a4');
                                     const imgWidth = 210;
@@ -2262,13 +2750,13 @@ export default function Settings() {
                                     pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
                                     heightLeft -= pageHeight;
 
-                                    while (heightLeft >= 0) {
+                                    while (heightLeft > 1) {
                                        position = heightLeft - imgHeight;
                                        pdf.addPage();
                                        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
                                        heightLeft -= pageHeight;
                                     }
-                                    pdf.save(`tax_invoice_preview_${profile.selectedA4Template}.pdf`);
+                                    pdf.save(`tax_invoice_preview_${profile.selectedA4Template || 'corporate'}.pdf`);
                                     setMessage({ type: 'success', text: 'PDF GENERATED: Document downloaded.' });
                                  } catch (err) {
                                     console.error(err);
@@ -2289,7 +2777,7 @@ export default function Settings() {
                          <div id="a4-print-preview-content" className="w-[210mm] bg-white shadow-2xl p-8 my-4 transform origin-top shrink-0 border border-gray-100">
                             {/* Render PrintTemplates with a mock invoice */}
                             <PrintTemplates 
-                               businessProfile={{
+                               profile={{
                                   companyName: profile.companyName || 'SCENTS & SOULS PERFUMERY CO',
                                   trn: profile.trn || '100452367400003',
                                   phone: profile.phone || '+971 4 555 1234',
@@ -2310,7 +2798,7 @@ export default function Settings() {
                                   thermalWidth: profile.thermalWidth || 80,
                                   fontFamily: profile.fontFamily || 'sans',
                                }}
-                               invoiceType="sales"
+                               type="sales_invoice"
                                data={{
                                   id: 'INV-2026-0812',
                                   createdAt: new Date().toISOString(),
@@ -2322,8 +2810,8 @@ export default function Settings() {
                                   discount: 50.00,
                                   grandTotal: 1262.50,
                                   items: [
-                                     { id: '1', name: 'Creed Aventus (Eau de Parfum - 100ml)', sku: 'CRD-AVN-100', quantity: 1, unitPrice: 1450.00, totalPrice: 1450.00, discount: 200.00 },
-                                     { id: '2', name: 'Amouage Reflection Man (Perfume Oil - 30ml)', sku: 'AMG-REF-30', quantity: 1, unitPrice: 450.00, totalPrice: 450.00, discount: 0 }
+                                     { id: '1', name: 'Creed Aventus (Eau de Parfum - 100ml)', sku: 'CRD-AVN-100', quantity: 1, unitPrice: 1000.00, totalPrice: 1000.00, discount: 0, vatAmount: 50.00, totalWithVat: 1050.00 },
+                                     { id: '2', name: 'Amouage Reflection Man (Perfume Oil - 30ml)', sku: 'AMG-REF-30', quantity: 1, unitPrice: 200.00, totalPrice: 200.00, discount: 0, vatAmount: 12.50, totalWithVat: 212.50 }
                                   ],
                                   payments: [
                                      { id: 'pay-1', amount: 1262.50, method: 'CARD', timestamp: new Date().toISOString() }

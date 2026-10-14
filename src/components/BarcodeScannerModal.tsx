@@ -75,17 +75,38 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     if (!isOpen) return;
 
     let html5QrCode: Html5Qrcode | null = null;
+    let isMounted = true;
+    let timerId: any = null;
+    let retries = 0;
     const scannerId = "barcode-scanner-viewport";
 
     const initAndStart = async () => {
+      if (!isMounted) return;
+
+      const element = document.getElementById(scannerId);
+      if (!element) {
+        if (retries < 15) {
+          retries++;
+          timerId = setTimeout(initAndStart, 100);
+          return;
+        }
+        if (isMounted) {
+          setScanError("Camera preview container not ready. Please use manual input below.");
+          setIsScanning(false);
+        }
+        return;
+      }
+
       try {
         // Instantiate the scanner inside the container
         html5QrCode = new Html5Qrcode(scannerId);
         scannerRef.current = html5QrCode;
 
         // Fetch available camera hardware
-        const devices = await Html5Qrcode.getCameras();
+        const devices = await Html5Qrcode.getCameras().catch(() => []);
         
+        if (!isMounted) return;
+
         if (devices && devices.length > 0) {
           setCameras(devices.map(d => ({ id: d.id, label: d.label })));
           
@@ -114,16 +135,20 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
               aspectRatio: 1.333333 // Standard aspect ratio for camera feeds
             },
             (decodedText) => {
-              playBeep();
-              onScanSuccess(decodedText);
-              onClose();
+              if (isMounted) {
+                playBeep();
+                onScanSuccess(decodedText);
+                onClose();
+              }
             },
             () => {
               // Silent verbose scanning errors
             }
           );
-          setIsScanning(true);
-          setScanError(null);
+          if (isMounted) {
+            setIsScanning(true);
+            setScanError(null);
+          }
         } else {
           // Attempt standard environment fallback
           await html5QrCode.start(
@@ -137,39 +162,52 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
               }
             },
             (decodedText) => {
-              playBeep();
-              onScanSuccess(decodedText);
-              onClose();
+              if (isMounted) {
+                playBeep();
+                onScanSuccess(decodedText);
+                onClose();
+              }
             },
             () => {}
           );
-          setIsScanning(true);
-          setScanError(null);
+          if (isMounted) {
+            setIsScanning(true);
+            setScanError(null);
+          }
         }
       } catch (err: any) {
         console.error("Camera barcode initialization failed:", err);
-        setScanError(err.message || "Failed to start camera. Verify camera permissions and secure context (HTTPS/localhost).");
-        setIsScanning(false);
+        if (isMounted) {
+          const rawMsg = err?.message || String(err);
+          const userFriendlyMsg = rawMsg.includes("clientWidth") || rawMsg.includes("null")
+            ? "Camera element was not ready. Switch to manual entry or try again."
+            : rawMsg;
+          setScanError(userFriendlyMsg);
+          setIsScanning(false);
+        }
       }
     };
 
-    // Short timeout to let modal animate open and the DOM node render completely
-    const timer = setTimeout(() => {
-      initAndStart();
-    }, 200);
+    // Delay slightly to let modal animation complete
+    timerId = setTimeout(initAndStart, 150);
 
     return () => {
-      clearTimeout(timer);
+      isMounted = false;
+      if (timerId) clearTimeout(timerId);
       if (html5QrCode) {
-        if (html5QrCode.isScanning) {
-          html5QrCode.stop()
-            .then(() => {
-              html5QrCode?.clear();
-            })
-            .catch(stopErr => {
-              console.warn("Clean stop omitted on unmount:", stopErr);
-            });
-        }
+        try {
+          if (html5QrCode.isScanning) {
+            html5QrCode.stop()
+              .then(() => {
+                try { html5QrCode?.clear(); } catch (_) {}
+              })
+              .catch(stopErr => {
+                console.warn("Clean stop omitted on unmount:", stopErr);
+              });
+          } else {
+            try { html5QrCode.clear(); } catch (_) {}
+          }
+        } catch (_) {}
       }
     };
   }, [isOpen, selectedCameraId, onScanSuccess, onClose]);

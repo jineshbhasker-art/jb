@@ -351,7 +351,7 @@ export function LaunchVideoSimulator({ onClose, standalone = false }: LaunchVide
 
   // Share / download simulation
   const handleExportVideo = () => {
-    alert("🚀 EXPORT SUCCESSFUL: Scent & Soul Launch Video compilation completed.\nFormat: High-Definition H.264 (MP4)\nPreset: " + aspectRatio + " (" + audioTheme + " mix)\nSaved to local storage. Ready for social media distribution.");
+    alert("🚀 EXPORT SUCCESSFUL: RRV PERFUME Launch Video compilation completed.\nFormat: High-Definition H.264 (MP4)\nPreset: " + aspectRatio + " (" + audioTheme + " mix)\nSaved to local storage. Ready for social media distribution.");
   };
 
   return (
@@ -475,7 +475,7 @@ export function LaunchVideoSimulator({ onClose, standalone = false }: LaunchVide
               {showOverlays && (
                 <div className="absolute bottom-6 left-6 right-6 flex justify-between items-end z-30 pointer-events-none text-white/40 font-mono text-[7px] tracking-widest uppercase">
                   <div className="space-y-1">
-                    <p>S&S PERFUMERY CORP</p>
+                    <p>RRV PERFUME • A DIVISION OF RRV TRADING LLC</p>
                     <p>RE Reveal • v2.0</p>
                   </div>
                   <div className="space-y-1 text-right">

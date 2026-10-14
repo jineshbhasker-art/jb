@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
+import Fuse from 'fuse.js';
+import React, { useMemo } from 'react';
 import { 
   Plus, 
   Search, 
@@ -67,6 +68,7 @@ export default function Inventory() {
   const [showBarcodeScanner, setShowBarcodeScanner] = React.useState(false);
   const [selectedBrand, setSelectedBrand] = React.useState<string>('All Brands');
   const [alertRules, setAlertRules] = React.useState<ConcentrationAlertRule[]>([]);
+  const [customThreshold, setCustomThreshold] = React.useState<number | ''>('');
 
   const [showShelfTalkerModal, setShowShelfTalkerModal] = React.useState(false);
   const [shelfTalkerIncludeNotes, setShelfTalkerIncludeNotes] = React.useState(true);
@@ -846,6 +848,67 @@ export default function Inventory() {
     URL.revokeObjectURL(url);
   };
 
+  const handleExportCriticalCSV = () => {
+    const headers = [
+      'Name', 
+      'SKU', 
+      'Barcode', 
+      'Category', 
+      'Brand', 
+      'Cost Price', 
+      'Selling Price', 
+      'Stock', 
+      'Min Level',
+      'Scent Family',
+      'Concentration',
+      'Top Notes',
+      'Middle Notes',
+      'Base Notes',
+      'Description',
+      'Type',
+      'VAT Rate',
+      'Is Active'
+    ];
+    
+    // Filter strictly for items falling below the threshold
+    const criticalItems = products.filter(p => {
+      const activeThreshold = customThreshold !== '' ? customThreshold : p.minStockLevel;
+      return p.stockQuantity <= activeThreshold;
+    });
+
+    const rows = criticalItems.map(p => [
+      p.name,
+      p.sku,
+      p.barcode,
+      p.category,
+      p.brand || '',
+      p.costPrice,
+      p.sellingPrice,
+      p.stockQuantity,
+      p.minStockLevel,
+      p.scentFamily || '',
+      p.concentration || '',
+      p.topNotes || '',
+      p.middleNotes || '',
+      p.baseNotes || '',
+      p.description || '',
+      p.type || 'new',
+      p.vatRate || 0.05,
+      p.isActive !== false ? 'true' : 'false'
+    ]);
+
+    const csvContent = [headers, ...rows]
+      .map(row => row.map(escapeCSVValue).join(","))
+      .join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `critical_low_stock_export_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const parseCSV = (text: string): string[][] => {
     const lines: string[][] = [];
     let row: string[] = [];
@@ -1210,34 +1273,39 @@ export default function Inventory() {
     }
   };
 
-  const filteredProducts = products.filter(p => {
-    const matchesQuery = p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         p.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         p.barcode.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         (p.brand && p.brand.toLowerCase().includes(searchQuery.toLowerCase()));
-    
-    const matchesBrand = selectedBrand === 'All Brands' || p.brand === selectedBrand;
-    
-    if (filterMode === 'low') {
-      const isLowStock = p.stockQuantity <= p.minStockLevel;
-      const matchingRule = alertRules.filter(r => r.isActive).find(rule => {
-        if (!p.concentration || !rule.concentration) return false;
-        const prodConc = p.concentration.toLowerCase().trim();
-        const ruleConc = rule.concentration.toLowerCase().trim();
-        if (prodConc === ruleConc) return true;
-        if (ruleConc.includes('edp') && (prodConc.includes('edp') || prodConc.includes('eau de parfum'))) return true;
-        if (ruleConc.includes('edt') && (prodConc.includes('edt') || prodConc.includes('eau de toilette'))) return true;
-        if (ruleConc.includes('oil') && (prodConc.includes('oil') || prodConc.includes('attar'))) return true;
-        if (ruleConc.includes('extrait') && prodConc.includes('extrait')) return true;
-        if (ruleConc.includes('parfum') && prodConc.includes('parfum') && !ruleConc.includes('eau de') && !prodConc.includes('eau de')) return true;
-        return prodConc.includes(ruleConc) || ruleConc.includes(prodConc);
-      });
-      const isConcentrationLow = matchingRule ? (p.stockQuantity <= matchingRule.minStockThreshold) : false;
-      return matchesQuery && matchesBrand && (isLowStock || isConcentrationLow);
-    }
-    if (filterMode === 'instock') return matchesQuery && matchesBrand && p.stockQuantity > 0;
-    return matchesQuery && matchesBrand;
-  });
+  const fuse = useMemo(() => new Fuse(products, {
+    keys: ['name', 'sku', 'barcode', 'brand', 'category'],
+    threshold: 0.3
+  }), [products]);
+
+  const filteredProducts = useMemo(() => {
+    const baseList = searchQuery ? fuse.search(searchQuery).map(r => r.item) : products;
+
+    return baseList.filter(p => {
+      const matchesBrand = selectedBrand === 'All Brands' || p.brand === selectedBrand;
+
+      if (filterMode === 'low') {
+        const activeThreshold = customThreshold !== '' ? customThreshold : p.minStockLevel;
+        const isLowStock = p.stockQuantity <= activeThreshold;
+        const matchingRule = alertRules.filter(r => r.isActive).find(rule => {
+          if (!p.concentration || !rule.concentration) return false;
+          const prodConc = p.concentration.toLowerCase().trim();
+          const ruleConc = rule.concentration.toLowerCase().trim();
+          if (prodConc === ruleConc) return true;
+          if (ruleConc.includes('edp') && (prodConc.includes('edp') || prodConc.includes('eau de parfum'))) return true;
+          if (ruleConc.includes('edt') && (prodConc.includes('edt') || prodConc.includes('eau de toilette'))) return true;
+          if (ruleConc.includes('oil') && (prodConc.includes('oil') || prodConc.includes('attar'))) return true;
+          if (ruleConc.includes('extrait') && prodConc.includes('extrait')) return true;
+          if (ruleConc.includes('parfum') && prodConc.includes('parfum') && !ruleConc.includes('eau de') && !prodConc.includes('eau de')) return true;
+          return prodConc.includes(ruleConc) || ruleConc.includes(prodConc);
+        });
+        const isConcentrationLow = matchingRule ? (p.stockQuantity <= matchingRule.minStockThreshold) : false;
+        return matchesBrand && (isLowStock || isConcentrationLow);
+      }
+      if (filterMode === 'instock') return matchesBrand && p.stockQuantity > 0;
+      return matchesBrand;
+    });
+  }, [products, fuse, searchQuery, selectedBrand, filterMode, alertRules, customThreshold]);
 
   const filteredBatches = batches.filter(b => {
     const matchesQuery = b.batchNumber.toLowerCase().includes(batchSearchQuery.toLowerCase()) ||
@@ -2312,6 +2380,31 @@ export default function Inventory() {
                  )}
                >LOW</button>
             </div>
+
+            <div className="flex items-center bg-gray-50 border border-gray-100 rounded-2xl px-4 py-2 hover:bg-gray-100/50 transition-all">
+              <span className="text-[8px] font-black uppercase tracking-[0.15em] text-gray-400 mr-2">ALERT THRESHOLD:</span>
+              <input
+                type="number"
+                min="0"
+                placeholder="Auto (Min Level)"
+                value={customThreshold}
+                onChange={e => {
+                  const val = e.target.value;
+                  setCustomThreshold(val === '' ? '' : parseInt(val, 10));
+                }}
+                className="w-14 bg-transparent outline-none text-[11px] font-black text-gray-800 tracking-tight text-center border-b border-gray-200 focus:border-black"
+                title="Override individual product thresholds with a custom global value"
+              />
+              {customThreshold !== '' && (
+                <button 
+                  onClick={() => setCustomThreshold('')}
+                  className="ml-2 text-gray-400 hover:text-red-500 transition-all text-[10px] font-bold cursor-pointer"
+                  title="Clear Override"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
              <button 
               onClick={() => {
                 setSelectedProductsForShelf(products.map(p => p.id || ''));
@@ -2334,9 +2427,21 @@ export default function Inventory() {
             <button 
               onClick={handleExportCSV}
               className="w-14 h-14 flex items-center justify-center text-gray-300 hover:text-black hover:bg-gray-50 rounded-2xl transition-all border border-transparent hover:border-gray-100 active:scale-95"
-              title="EXPORT CSV"
+              title="EXPORT ALL CSV"
             >
               <Download size={24} />
+            </button>
+
+            <button 
+              onClick={handleExportCriticalCSV}
+              className="px-4 py-3 bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 rounded-2xl text-[10px] font-black uppercase tracking-widest cursor-pointer transition-all flex items-center gap-2 shadow-sm border border-red-100/50 active:scale-95"
+              title="EXPORT CRITICAL LOW-STOCK ITEMS AS CSV"
+            >
+              <FileSpreadsheet size={14} className="text-red-500" />
+              <span>EXPORT CRITICAL</span>
+              <span className="bg-red-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full">
+                {products.filter(p => p.stockQuantity <= (customThreshold !== '' ? customThreshold : p.minStockLevel)).length}
+              </span>
             </button>
             <div className="w-[1px] h-10 bg-gray-100 mx-2" />
             <div className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-300">
@@ -2358,77 +2463,86 @@ export default function Inventory() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {filteredProducts.map((p) => (
-                <tr key={p.id} className="hover:bg-gray-50/30 transition-colors group">
-                  <td className="px-10 py-8">
-                    <div className="flex items-center gap-6">
-                      <div className="w-16 h-16 rounded-2xl bg-gray-50 flex items-center justify-center text-gray-300 border border-gray-100 group-hover:scale-110 transition-transform overflow-hidden p-1">
-                        {p.image ? (
-                          <img src={p.image} alt={p.name} className="w-full h-full object-contain rounded-xl" />
-                        ) : (
-                          <Package size={28} />
-                        )}
-                      </div>
-                      <div>
-                        <div className="text-sm font-black flex items-center gap-3 uppercase tracking-tighter">
-                          {p.name}
-                          <span className={cn(
-                            "text-[8px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest",
-                            p.type === ProductType.NEW ? "bg-green-500 text-white" :
-                            p.type === ProductType.USED ? "bg-blue-500 text-white" :
-                            p.type === ProductType.REPAIR ? "bg-orange-500 text-white" : "bg-gray-400 text-white"
-                          )}>
-                            {p.type}
-                          </span>
+              {filteredProducts.map((p) => {
+                const activeThreshold = customThreshold !== '' ? customThreshold : p.minStockLevel;
+                const isLowStock = p.stockQuantity <= activeThreshold;
+                return (
+                  <tr 
+                    key={p.id} 
+                    className={cn(
+                      "hover:bg-gray-50/30 transition-colors group",
+                      isLowStock ? "bg-red-50/30 hover:bg-red-50/50" : ""
+                    )}
+                  >
+                    <td className="px-10 py-8">
+                      <div className="flex items-center gap-6">
+                        <div className="w-16 h-16 rounded-2xl bg-gray-50 flex items-center justify-center text-gray-300 border border-gray-100 group-hover:scale-110 transition-transform overflow-hidden p-1">
+                          {p.image ? (
+                            <img src={p.image} alt={p.name} className="w-full h-full object-contain rounded-xl" />
+                          ) : (
+                            <Package size={28} />
+                          )}
                         </div>
-                        <div className="text-[10px] text-gray-400 mt-1 tracking-[0.2em] font-mono font-bold uppercase">{p.sku}</div>
-
-                        {(p.scentFamily || p.concentration) && (
-                          <div className="flex items-center gap-2 mt-2 flex-wrap">
-                            {p.scentFamily && (
-                              <span className="text-[8px] px-2.5 py-1 bg-amber-50 text-[#C5A059] border border-amber-100 rounded-lg font-black uppercase tracking-widest">
-                                {p.scentFamily}
-                              </span>
-                            )}
-                            {p.concentration && (
-                              <span className="text-[8px] px-2.5 py-1 bg-purple-50 text-purple-800 border border-purple-100 rounded-lg font-black uppercase tracking-widest">
-                                {p.concentration.replace(/\s*\(.*\)/, '')}
-                              </span>
-                            )}
-                          </div>
-                        )}
-
-                        {(p.topNotes || p.middleNotes || p.baseNotes) && (
-                          <div className="text-[9px] text-gray-400 mt-1.5 flex items-center gap-1 font-bold">
-                            <span className="text-[#C5A059] font-black uppercase tracking-widest text-[8px] bg-[#C5A059]/10 px-1 py-0.5 rounded">Notes</span>
-                            <span className="truncate max-w-[200px]" title={[p.topNotes, p.middleNotes, p.baseNotes].filter(Boolean).join(' • ')}>
-                              {[p.topNotes, p.middleNotes, p.baseNotes].filter(Boolean).join(' • ')}
+                        <div>
+                          <div className="text-sm font-black flex items-center gap-3 uppercase tracking-tighter">
+                            {p.name}
+                            <span className={cn(
+                              "text-[8px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest",
+                              p.type === ProductType.NEW ? "bg-green-500 text-white" :
+                              p.type === ProductType.USED ? "bg-blue-500 text-white" :
+                              p.type === ProductType.REPAIR ? "bg-orange-500 text-white" : "bg-gray-400 text-white"
+                            )}>
+                              {p.type}
                             </span>
                           </div>
+                          <div className="text-[10px] text-gray-400 mt-1 tracking-[0.2em] font-mono font-bold uppercase">{p.sku}</div>
+
+                          {(p.scentFamily || p.concentration) && (
+                            <div className="flex items-center gap-2 mt-2 flex-wrap">
+                              {p.scentFamily && (
+                                <span className="text-[8px] px-2.5 py-1 bg-amber-50 text-[#C5A059] border border-amber-100 rounded-lg font-black uppercase tracking-widest">
+                                  {p.scentFamily}
+                                </span>
+                              )}
+                              {p.concentration && (
+                                <span className="text-[8px] px-2.5 py-1 bg-purple-50 text-purple-800 border border-purple-100 rounded-lg font-black uppercase tracking-widest">
+                                  {p.concentration.replace(/\s*\(.*\)/, '')}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {(p.topNotes || p.middleNotes || p.baseNotes) && (
+                            <div className="text-[9px] text-gray-400 mt-1.5 flex items-center gap-1 font-bold">
+                              <span className="text-[#C5A059] font-black uppercase tracking-widest text-[8px] bg-[#C5A059]/10 px-1 py-0.5 rounded">Notes</span>
+                              <span className="truncate max-w-[200px]" title={[p.topNotes, p.middleNotes, p.baseNotes].filter(Boolean).join(' • ')}>
+                                {[p.topNotes, p.middleNotes, p.baseNotes].filter(Boolean).join(' • ')}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-10 py-8">
+                      <div className="flex items-center gap-4">
+                        <div className={cn("text-lg font-black", isLowStock ? "text-red-600 font-extrabold" : "")}>{p.stockQuantity}</div>
+                        {isLowStock && (
+                          <div className="flex items-center gap-2 text-[8px] font-black text-red-600 bg-red-50 px-3 py-1 rounded-full border border-red-100 uppercase tracking-widest">
+                            <AlertTriangle size={12} className="text-red-500" />
+                            LOW STOCK
+                          </div>
                         )}
                       </div>
-                    </div>
-                  </td>
-                  <td className="px-10 py-8">
-                    <div className="flex items-center gap-4">
-                      <div className="text-lg font-black">{p.stockQuantity}</div>
-                      {p.stockQuantity <= p.minStockLevel && (
-                        <div className="flex items-center gap-2 text-[8px] font-black text-orange-600 bg-orange-50 px-3 py-1 rounded-full border border-orange-100 uppercase tracking-widest">
-                          <AlertTriangle size={12} />
-                          CRITICAL
-                        </div>
-                      )}
-                    </div>
-                    <div className="w-32 h-1.5 bg-gray-100 rounded-full mt-3 overflow-hidden shadow-inner">
-                      <div 
-                        className={cn(
-                          "h-full rounded-full transition-all duration-1000",
-                          p.stockQuantity <= p.minStockLevel ? "bg-orange-500" : "bg-black"
-                        )}
-                        style={{ width: `${Math.min((p.stockQuantity / (p.minStockLevel * 4)) * 100, 100)}%` }}
-                      />
-                    </div>
-                  </td>
+                      <div className="w-32 h-1.5 bg-gray-100 rounded-full mt-3 overflow-hidden shadow-inner">
+                        <div 
+                          className={cn(
+                            "h-full rounded-full transition-all duration-1000",
+                            isLowStock ? "bg-red-500" : "bg-black"
+                          )}
+                          style={{ width: `${Math.min((p.stockQuantity / (Math.max(1, activeThreshold) * 4)) * 100, 100)}%` }}
+                        />
+                      </div>
+                    </td>
                   <td className="px-10 py-8">
                     <div className="text-lg font-bold text-gray-400 font-display tracking-tighter">
                       {formatCurrency(p.costPrice || 0)}
@@ -2473,7 +2587,7 @@ export default function Inventory() {
                     </div>
                   </td>
                 </tr>
-              ))}
+              )})}
                         {loading && [1,2,3,4,5].map(i => (
                           <tr key={i} className="animate-pulse">
                             <td colSpan={6} className="px-10 py-10 border-b border-gray-50 bg-gray-50/10" />

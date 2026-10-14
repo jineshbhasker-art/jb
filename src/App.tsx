@@ -23,6 +23,7 @@ import PublicProductProfile from './pages/PublicProductProfile';
 import { AuthProvider, useAuth } from './AuthContext';
 import { LuxuryLogo } from './components/LuxuryLogo';
 import { ScentAndSoulLogo } from './components/ScentAndSoulLogo';
+import { RRVLogo } from './components/RRVLogo';
 import { LaunchVideoSimulator } from './components/LaunchVideoSimulator';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Sparkles, Fingerprint, Lock, Delete, Film, Play } from 'lucide-react';
@@ -68,15 +69,18 @@ function AppContent() {
       navigator.vibrate(12); // Elegant click haptic
     }
     setPinCode(prev => {
-      const next = prev + digit;
-      if (next.length === 4) {
-        handlePinLogin(next);
-        return '';
-      }
-      if (next.length > 4) return prev;
-      return next;
+      if (prev.length >= 4) return prev;
+      return prev + digit;
     });
-  }, [handlePinLogin]);
+  }, []);
+
+  React.useEffect(() => {
+    if (pinCode.length === 4) {
+      const pinVal = pinCode;
+      setPinCode('');
+      handlePinLogin(pinVal);
+    }
+  }, [pinCode, handlePinLogin]);
 
   React.useEffect(() => {
     if (authMethod !== 'pin' || user) return;
@@ -190,7 +194,7 @@ function AppContent() {
           transition={{ duration: 1.5, ease: [0.16, 1, 0.3, 1] }}
           className="flex flex-col items-center z-10 px-6 max-w-lg w-full text-center"
         >
-          {/* Scent & Soul Animated Logo Emblem */}
+          {/* RRV PERFUME Animated Logo Emblem */}
           <div className="mb-6 relative">
             <motion.div
               initial={{ rotateY: 180, opacity: 0 }}
@@ -198,7 +202,7 @@ function AppContent() {
               transition={{ duration: 1.8, ease: [0.16, 1, 0.3, 1] }}
               className="p-1 bg-gradient-to-tr from-white/5 to-white/10 rounded-[3rem] border border-white/10 shadow-[0_40px_80px_-15px_rgba(0,0,0,0.8)] backdrop-blur-xl relative z-10"
             >
-              <ScentAndSoulLogo size="xl" showText={false} animated={true} />
+              <RRVLogo size="xl" showText={false} animated={true} />
             </motion.div>
             
             {/* Halo glow behind emblem */}
@@ -212,11 +216,11 @@ function AppContent() {
             transition={{ delay: 0.6, duration: 1 }}
             className="space-y-3"
           >
-            <h1 className="text-4xl md:text-5xl font-serif font-medium tracking-[0.15em] text-white">
-              SCENT <span className="text-[#C5A059] italic font-normal">&</span> SOUL
+            <h1 className="text-4xl md:text-5xl font-serif font-bold tracking-[0.2em] text-white">
+              RRV <span className="text-[#C5A059] italic font-normal">PERFUME</span>
             </h1>
-            <p className="text-[10px] tracking-[0.45em] uppercase text-[#C5A059] font-semibold">
-              FRAGRANCE OF THE SOUL
+            <p className="text-[10px] tracking-[0.45em] uppercase text-gray-300 font-bold">
+              A DIVISION OF RRV TRADING LLC
             </p>
           </motion.div>
 
@@ -315,11 +319,11 @@ function AppContent() {
               transition={{ duration: 25, repeat: Infinity, ease: "linear" }}
               className="inline-flex items-center justify-center w-28 h-28 mx-auto"
             >
-              <ScentAndSoulLogo size="lg" showText={false} />
+              <RRVLogo size="lg" showText={false} lightMode={true} />
             </motion.div>
             <div className="space-y-1">
-              <h1 className="font-display text-5xl font-black tracking-tighter uppercase">SCENTS & SOULS</h1>
-              <p className="text-[10px] font-black uppercase tracking-[0.6em] text-[#C5A059]">Bespoke Scent Registry</p>
+              <h1 className="font-display text-4xl font-black tracking-tighter uppercase">RRV PERFUME</h1>
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#C5A059]">A DIVISION OF RRV TRADING LLC</p>
             </div>
           </motion.div>
 
@@ -447,10 +451,10 @@ function AppContent() {
                         key={idx}
                         animate={{
                           scale: pinCode.length > idx ? [1, 1.25, 1] : 1,
-                          backgroundColor: pinCode.length > idx ? '#C5A059' : '#E5E7EB'
                         }}
                         className={cn(
-                          "w-5 h-5 rounded-full border border-gray-200 transition-colors shadow-inner"
+                          "w-5 h-5 rounded-full border border-gray-200 transition-all duration-300 shadow-inner",
+                          pinCode.length > idx ? "bg-[#C5A059]" : "bg-[#E5E7EB]"
                         )}
                       />
                     ))}
@@ -594,9 +598,9 @@ function AppContent() {
                 </div>
              </div>
              <p className="text-[9px] text-gray-400 font-bold uppercase tracking-[0.4em] text-center px-12 leading-relaxed">
-               Proprietary Scent Registry System • Scents & Souls Perfume LAB UAE 
+               Proprietary Fragrance Registry System • RRV PERFUME
                <br />
-               <span className="text-[8px] opacity-50">Authorized Use Only</span>
+               <span className="text-[8px] opacity-60">A Division of RRV TRADING LLC • Dubai, UAE</span>
              </p>
           </div>
         </div>
@@ -607,7 +611,7 @@ function AppContent() {
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
-        return <Dashboard />;
+        return <Dashboard onNavigate={setActiveTab} />;
       case 'pos':
         return <POS />;
       case 'repairs':

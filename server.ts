@@ -11,37 +11,113 @@ const PORT = 3000;
 
 app.use(express.json());
 
-// Initialize Gemini SDK with User-Agent for AI Studio Build telemetry
-const apiKey = process.env.GEMINI_API_KEY;
-const ai = apiKey
-  ? new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          "User-Agent": "aistudio-build",
-        },
+// Helper to lazy initialize Gemini SDK with User-Agent for AI Studio Build telemetry
+function getGenAI() {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || apiKey.trim() === "" || apiKey === "MY_GEMINI_API_KEY") {
+    return null;
+  }
+  return new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      headers: {
+        "User-Agent": "aistudio-build",
       },
-    })
-  : null;
+    },
+  });
+}
+
+// Algorithmic rule-based fallback when GEMINI_API_KEY is not configured
+function generateRuleBasedScentMatch(preferences: any, products: any[]) {
+  const scentFamilies: string[] = Array.isArray(preferences.scentFamilies)
+    ? preferences.scentFamilies
+    : preferences.scentFamilies ? [preferences.scentFamilies] : [];
+  const favoriteNotes: string[] = Array.isArray(preferences.favoriteNotes)
+    ? preferences.favoriteNotes
+    : (preferences.favoriteNotes || "").split(",").map((n: string) => n.trim()).filter(Boolean);
+  const targetOccasion = preferences.occasion || "Daily Signature";
+  const customPrompt = (preferences.customPrompt || "").toLowerCase();
+
+  const scoredProducts = (products || []).map((p: any) => {
+    let score = 55;
+    // Scent family match
+    if (scentFamilies.length > 0 && scentFamilies.some(sf => 
+      (p.scentFamily || "").toLowerCase().includes(sf.toLowerCase()) || 
+      (p.category || "").toLowerCase().includes(sf.toLowerCase())
+    )) {
+      score += 25;
+    }
+    // Favorite notes match
+    const productNotes = `${p.topNotes || ''} ${p.middleNotes || ''} ${p.baseNotes || ''} ${p.description || ''}`.toLowerCase();
+    favoriteNotes.forEach((note: string) => {
+      if (note && productNotes.includes(note.toLowerCase())) {
+        score += 15;
+      }
+    });
+    // Custom prompt matching
+    if (customPrompt && productNotes.split(' ').some((word: string) => word.length > 3 && customPrompt.includes(word))) {
+      score += 10;
+    }
+
+    const matchPercentage = Math.min(98, Math.max(68, score));
+    return {
+      product: p,
+      matchPercentage,
+      score
+    };
+  });
+
+  scoredProducts.sort((a, b) => b.score - a.score);
+  const topMatches = scoredProducts.slice(0, 3);
+
+  const recommendations = topMatches.map(({ product, matchPercentage }) => ({
+    productId: product.id,
+    matchPercentage,
+    whyItMatches: `Harmonizes gracefully with your preference for ${scentFamilies.join(', ') || 'bespoke fragrances'} and accentuates signature notes of ${product.topNotes || product.scentFamily || 'exclusive accords'} for ${targetOccasion}.`,
+    layeringAdvice: `Layer delicately with a warm amber or sandalwood base oil to amplify the ${product.baseNotes || 'heart accords'}.`
+  }));
+
+  const primaryNote = favoriteNotes[0] || (scentFamilies[0] ? `${scentFamilies[0]} Accord` : "Royal Amber");
+  const secondaryNote = favoriteNotes[1] || "Taif Rose";
+  const baseNote = favoriteNotes[2] || "Oud Royale";
+
+  const bespokeFormula = {
+    name: `Elixir de ${primaryNote.toUpperCase()}`,
+    description: `A masterfully formulated luxury concentrate crafted for ${targetOccasion}, blending top-tier ${primaryNote} with warm undercurrents of ${secondaryNote} and grounded by rare ${baseNote}.`,
+    ingredients: [
+      { noteName: `Pure ${primaryNote} Extract`, percentage: 40, role: "Top Note" },
+      { noteName: `Artisanal ${secondaryNote} Essence`, percentage: 35, role: "Middle Note" },
+      { noteName: `Aged ${baseNote} Oil`, percentage: 25, role: "Base Note" }
+    ],
+    careRitual: "Apply 2-3 drops to pulse points (wrists, neck, behind ears). Allow 10 minutes for peak maturation with natural skin warmth."
+  };
+
+  return {
+    recommendations,
+    bespokeFormula,
+    notice: "Generated using RRV Perfume Rule Engine. Add GEMINI_API_KEY in AI Studio Secrets to unlock neural AI profiling."
+  };
+}
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", geminiConfigured: !!ai });
+  res.json({ status: "ok", geminiConfigured: !!getGenAI() });
 });
 
 // AI Scent Matchmaker endpoint
 app.post("/api/scent-matchmaker", async (req, res) => {
   try {
-    if (!ai) {
-      return res.status(500).json({
-        error: "Gemini API is not configured on the server. Please verify your GEMINI_API_KEY in the Secrets settings.",
-      });
-    }
-
     const { preferences, products } = req.body;
 
     if (!preferences) {
       return res.status(400).json({ error: "Preferences are required." });
+    }
+
+    const ai = getGenAI();
+    if (!ai) {
+      // Fallback to internal rule-based matchmaker when GEMINI_API_KEY is not set
+      const fallbackResult = generateRuleBasedScentMatch(preferences, products);
+      return res.json(fallbackResult);
     }
 
     // Prepare catalog data for Gemini context (minimizing payload tokens)
@@ -80,7 +156,7 @@ TASK:
 Be creative, evocative, and maintain a highly polished, high-end perfume boutique persona.`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-3.6-flash",
       contents: prompt,
       config: {
         systemInstruction: "You are an elite, world-class artisanal perfume nose and bespoke fragrance curator. Your communication is sophisticated, luxury-focused, and highly precise regarding scent layering and oil ratios.",
@@ -139,7 +215,13 @@ Be creative, evocative, and maintain a highly polished, high-end perfume boutiqu
     res.json(resultJson);
   } catch (error: any) {
     console.error("Scent Matchmaker Error:", error);
-    res.status(500).json({ error: error.message || "An error occurred during matching." });
+    // If Gemini fails, fall back to rule-based scent matcher gracefully
+    try {
+      const fallbackResult = generateRuleBasedScentMatch(req.body.preferences, req.body.products);
+      return res.json(fallbackResult);
+    } catch (_) {
+      res.status(500).json({ error: error.message || "An error occurred during matching." });
+    }
   }
 });
 

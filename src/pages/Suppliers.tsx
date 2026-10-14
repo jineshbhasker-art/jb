@@ -56,6 +56,8 @@ export default function Suppliers() {
   const [searchQuery, setSearchQuery] = React.useState('');
   const [selectedCategory, setSelectedCategory] = React.useState('All');
   const [showAddModal, setShowAddModal] = React.useState(false);
+  const [showContactModal, setShowContactModal] = React.useState(false);
+  const [contactSupplier, setContactSupplier] = React.useState<Supplier | null>(null);
   const [isEditing, setIsEditing] = React.useState(false);
   const [newSupplier, setNewSupplier] = React.useState<Partial<Supplier>>({
     name: '',
@@ -342,6 +344,41 @@ export default function Suppliers() {
             </motion.div>
           </div>
         )}
+        {showContactModal && contactSupplier && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowContactModal(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 40 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 40 }}
+              className="relative w-full max-w-lg bg-white rounded-[3rem] shadow-[0_50px_100px_rgba(0,0,0,0.25)] overflow-hidden flex flex-col p-12"
+            >
+              <h2 className="font-display text-2xl font-black uppercase tracking-tight mb-8">Contact {contactSupplier.name}</h2>
+              <div className="space-y-4">
+                <a href={`mailto:${contactSupplier.email}`} className="flex items-center gap-4 p-4 bg-gray-50 rounded-2xl hover:bg-gray-100 transition-colors">
+                  <Mail size={20} className="text-[#C5A059]" />
+                  <span className="font-bold text-sm">{contactSupplier.email}</span>
+                </a>
+                <a href={`tel:${contactSupplier.phone}`} className="flex items-center gap-4 p-4 bg-gray-50 rounded-2xl hover:bg-gray-100 transition-colors">
+                  <Phone size={20} className="text-[#C5A059]" />
+                  <span className="font-bold text-sm">{contactSupplier.phone}</span>
+                </a>
+              </div>
+              <button
+                onClick={() => setShowContactModal(false)}
+                className="mt-12 w-full py-5 bg-[#0F0F0F] text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] hover:bg-gray-800 transition-all"
+              >
+                CLOSE
+              </button>
+            </motion.div>
+          </div>
+        )}
       </AnimatePresence>
 
       <div className="advanced-3d-card overflow-hidden bg-white">
@@ -423,6 +460,13 @@ export default function Suppliers() {
                   </td>
                   <td className="px-10 py-10 text-center">
                     <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-all translate-x-2 group-hover:translate-x-0">
+                      <button 
+                        onClick={() => { setContactSupplier(s); setShowContactModal(true); }}
+                        className="w-10 h-10 flex items-center justify-center text-gray-400 hover:text-[#C5A059] hover:bg-amber-50 rounded-xl transition-all shadow-sm"
+                        title="Contact Vendor"
+                      >
+                        <Mail size={18} />
+                      </button>
                       <button onClick={() => handleEdit(s)} className="w-10 h-10 flex items-center justify-center text-gray-400 hover:text-black hover:bg-white rounded-xl transition-all shadow-sm">
                          <Edit2 size={18} />
                       </button>

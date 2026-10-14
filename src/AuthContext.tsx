@@ -28,6 +28,8 @@ interface AuthContextType {
     isMobile: boolean;
     screenWidth: number;
     screenHeight: number;
+    calibrationMode: 'auto' | 'mobile' | 'desktop';
+    setCalibrationMode: (mode: 'auto' | 'mobile' | 'desktop') => void;
   };
 }
 
@@ -37,6 +39,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [deviceType, setDeviceType] = useState<'ios' | 'android' | 'desktop'>('desktop');
+  const [calibrationMode, setCalibrationModeState] = useState<'auto' | 'mobile' | 'desktop'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('aqm_calibration_mode');
+      if (saved === 'auto' || saved === 'mobile' || saved === 'desktop') {
+        return saved;
+      }
+    }
+    return 'auto';
+  });
+
   const [calibration, setCalibration] = useState({
     isLandscape: false,
     isMobile: false,
@@ -44,19 +56,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     screenHeight: typeof window !== 'undefined' ? window.innerHeight : 800,
   });
 
-  useEffect(() => {
-    // Calibration Observer
-    const calibrate = () => {
-      setCalibration({
-        isLandscape: window.innerWidth > window.innerHeight,
-        isMobile: window.innerWidth < 1024,
-        screenWidth: window.innerWidth,
-        screenHeight: window.innerHeight,
-      });
-    };
+  const setCalibrationMode = (mode: 'auto' | 'mobile' | 'desktop') => {
+    setCalibrationModeState(mode);
+    localStorage.setItem('aqm_calibration_mode', mode);
+  };
 
-    // Defer initial state updates to avoid React 18 "update during render" warnings
-    const initTimer = setTimeout(() => {
+  useEffect(() => {
+    const initAuth = () => {
       // Check local storage for session
       const savedUser = localStorage.getItem('aqm_session');
       if (savedUser) {
@@ -64,7 +70,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Device Detection for Calibration
-      const ua = navigator.userAgent.toLowerCase();
+      const ua = typeof navigator !== 'undefined' ? navigator.userAgent.toLowerCase() : '';
       const isIOS = /iphone|ipad|ipod/.test(ua);
       const isAndroid = /android/.test(ua);
       
@@ -75,20 +81,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         setDeviceType('desktop');
       }
-
-      calibrate();
       setLoading(false);
-    }, 0);
+    };
 
-    window.addEventListener('resize', calibrate);
-    window.addEventListener('orientationchange', calibrate);
+    const timer = setTimeout(initAuth, 0);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    // Calibration Observer
+    const calibrate = () => {
+      const isMobileCalibrated = 
+        calibrationMode === 'mobile' 
+          ? true 
+          : calibrationMode === 'desktop' 
+            ? false 
+            : window.innerWidth < 1024;
+
+      setCalibration({
+        isLandscape: window.innerWidth > window.innerHeight,
+        isMobile: isMobileCalibrated,
+        screenWidth: window.innerWidth,
+        screenHeight: window.innerHeight,
+      });
+    };
+
+    const timer = setTimeout(calibrate, 0);
+
+    const handleResize = () => {
+      calibrate();
+    };
+
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
 
     return () => {
-      clearTimeout(initTimer);
-      window.removeEventListener('resize', calibrate);
-      window.removeEventListener('orientationchange', calibrate);
+      clearTimeout(timer);
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
     };
-  }, []);
+  }, [calibrationMode]);
 
   const login = async (username: string, pass: string) => {
     // Admin fallback
@@ -180,7 +212,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, loginBiometrically, loginByPin, signOut, deviceType, calibration }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      loading, 
+      login, 
+      loginBiometrically, 
+      loginByPin, 
+      signOut, 
+      deviceType, 
+      calibration: {
+        ...calibration,
+        calibrationMode,
+        setCalibrationMode
+      }
+    }}>
       {children}
     </AuthContext.Provider>
   );

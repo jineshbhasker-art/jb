@@ -46,6 +46,7 @@ const MOCK_PRODUCTS: Product[] = [
 ];
 
 import { productsService, salesService, transactionsService, customersService, businessProfileService, promoVouchersService } from '../lib/dbService';
+import { addToQueue, syncQueue } from '../lib/offlineQueue';
 import { Sale, SaleStatus, AccountingType, Customer } from '../types';
 import { useAuth } from '../AuthContext';
 
@@ -137,9 +138,32 @@ const BASE_NOTE_OPTIONS = ['Cambrian Oud', 'Sandalwood Tears', 'Siberian Musk', 
 const PREMIUM_NOTES = ['Saffron', 'Oud Wood', 'Cambrian Oud', 'Ambergris', 'Siberian Musk', 'Damask Rose', 'Midnight Amber', 'Sandalwood Tears'];
 
 export default function POS() {
-  const { user } = useAuth();
+  const { user, calibration: sysCalibration } = useAuth();
+  const isMobile = sysCalibration.isMobile;
   const [products, setProducts] = React.useState<Product[]>([]);
   const [customers, setCustomers] = React.useState<Customer[]>([]);
+  const [isOnline, setIsOnline] = React.useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+
+  React.useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      syncQueue().then((res) => {
+        if (res.successCount > 0) {
+          console.log(`[POS Auto-Sync] Auto-synced ${res.successCount} offline transactions.`);
+        }
+      });
+    };
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   const [profile, setProfile] = React.useState<any>(null);
   const [cart, setCart] = React.useState<SaleItem[]>([]);
   const [searchQuery, setSearchQuery] = React.useState('');
@@ -668,46 +692,93 @@ export default function POS() {
           createdAt: new Date().toISOString()
        };
 
-       const saleId = await salesService.add(sale);
-       
-       // Update Voucher usage count
-       if (appliedVoucher?.id) {
-         await promoVouchersService.update(appliedVoucher.id, {
-           usageCount: (appliedVoucher.usageCount || 0) + 1
-         });
-       }
-       const finalSale = { id: saleId, ...sale } as Sale;
-       setLastSale(finalSale);
-       setShowReceiptModal(true);
-
-       // Update Customer LTV
-       if (selectedCustomer?.id) {
-          await customersService.update(selectedCustomer.id, {
-             totalSpent: (selectedCustomer.totalSpent || 0) + grandTotal,
-             lastPurchaseDate: new Date().toISOString()
+       if (!isOnline) {
+          const offlineId = `OFF-${Date.now()}`;
+          await addToQueue({
+             id: offlineId,
+             sale,
+             appliedVoucherId: appliedVoucher?.id,
+             selectedCustomerId: selectedCustomer?.id,
+             cart,
+             grandTotal,
+             paymentMethod,
+             invoiceNumber,
+             createdAt: sale.createdAt
           });
-       }
 
-       // Create Transaction
-       await transactionsService.add({
-          type: AccountingType.INCOME,
-          category: 'Sales',
-          amount: grandTotal,
-          description: `Sale - ${invoiceNumber}`,
-          saleId,
-          date: new Date().toISOString(),
-          paymentMethod,
-          reference: invoiceNumber
-       });
+          // Optimistically update stock levels locally
+          setProducts(prevProducts => prevProducts.map(product => {
+             const cartItem = cart.find(item => item.productId.split('-')[0] === product.id);
+             if (cartItem) {
+                return {
+                   ...product,
+                   stockQuantity: Math.max(0, product.stockQuantity - cartItem.quantity)
+                };
+             }
+             return product;
+          }));
 
-       // Update Stock
-       for (const item of cart) {
-          const baseId = item.productId.split('-')[0];
-          const product = products.find(p => p.id === baseId);
-          if (product) {
-             await productsService.update(product.id, {
-                stockQuantity: Math.max(0, product.stockQuantity - item.quantity)
+          // Optimistically update customer spending
+          if (selectedCustomer?.id) {
+             setCustomers(prevCustomers => prevCustomers.map(cust => {
+                if (cust.id === selectedCustomer.id) {
+                   return {
+                      ...cust,
+                      totalSpent: (cust.totalSpent || 0) + grandTotal,
+                      lastPurchaseDate: sale.createdAt
+                   };
+                }
+                return cust;
+             }));
+          }
+
+          const finalSale = { id: offlineId, ...sale } as Sale;
+          setLastSale(finalSale);
+          setShowReceiptModal(true);
+
+          alert("STORES IN OFFLINE VAULT: Network connection is down. The transaction is safely queued in IndexedDB and will auto-sync on reconnect.");
+       } else {
+          const saleId = await salesService.add(sale);
+          
+          // Update Voucher usage count
+          if (appliedVoucher?.id) {
+            await promoVouchersService.update(appliedVoucher.id, {
+              usageCount: (appliedVoucher.usageCount || 0) + 1
+            });
+          }
+          const finalSale = { id: saleId, ...sale } as Sale;
+          setLastSale(finalSale);
+          setShowReceiptModal(true);
+
+          // Update Customer LTV
+          if (selectedCustomer?.id) {
+             await customersService.update(selectedCustomer.id, {
+                totalSpent: (selectedCustomer.totalSpent || 0) + grandTotal,
+                lastPurchaseDate: new Date().toISOString()
              });
+          }
+
+          // Create Transaction
+          await transactionsService.add({
+             type: AccountingType.INCOME,
+             category: 'Sales',
+             amount: grandTotal,
+             description: `Sale - ${invoiceNumber}`,
+             saleId,
+             date: new Date().toISOString(),
+             paymentMethod,
+             reference: invoiceNumber
+          });
+
+          // Update Stock
+          for (const item of cart) {
+             const baseId = item.productId.split('-')[0];
+             const product = products.find(p => p.id === baseId);
+             if (product) {
+                await productsService.update(product.id, {
+                   stockQuantity: Math.max(0, product.stockQuantity - item.quantity)
+                });
+             }
           }
        }
 
@@ -797,9 +868,15 @@ export default function POS() {
   }, []);
 
   return (
-    <div className="flex flex-col lg:flex-row gap-8 h-full -m-4 md:-m-8 overflow-hidden bg-[#FBFBFB] relative">
+    <div className={cn(
+      "flex gap-8 h-full -m-4 md:-m-8 bg-[#FBFBFB] relative",
+      isMobile ? "flex-col overflow-y-auto" : "flex-row overflow-hidden"
+    )}>
       {/* Search & Products */}
-      <div className="flex-1 p-4 md:p-8 flex flex-col gap-6 md:gap-10 overflow-hidden">
+      <div className={cn(
+        "flex-1 p-4 md:p-8 flex flex-col gap-6 md:gap-10",
+        isMobile ? "" : "overflow-hidden"
+      )}>
         <div className="flex flex-col md:flex-row items-center justify-between gap-4 md:gap-8">
           <div className="relative flex-1 w-full">
             <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300" size={20} strokeWidth={2} />
@@ -902,7 +979,7 @@ export default function POS() {
         </div>
 
          <div className="flex-1 overflow-y-auto pr-2 md:pr-4 no-scrollbar">
-          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-8">
+          <div className={cn("grid", isMobile ? "grid-cols-2 gap-3" : "grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-8")}>
             {filteredProducts.map((product) => (
               <button
                 key={product.id}
@@ -960,34 +1037,39 @@ export default function POS() {
       </div>
 
       {/* Floating Cart Trigger for Mobile */}
-      <motion.button 
-        whileTap={{ scale: 0.9 }}
-        onClick={() => setIsCartOpen(true)}
-        className="fixed bottom-6 right-6 lg:hidden w-16 h-16 bg-[#0F0F0F] text-white rounded-full shadow-2xl z-[40] flex items-center justify-center group"
-      >
-        <div className="relative">
-          <ShoppingCart size={24} />
-          {cart.length > 0 && (
-            <span className="absolute -top-2 -right-2 w-5 h-5 bg-[#C5A059] rounded-full flex items-center justify-center text-[10px] font-black shadow-lg ring-2 ring-white animate-bounce-short">
-              {cart.length}
-            </span>
-          )}
-        </div>
-      </motion.button>
+      {isMobile && (
+        <motion.button 
+          whileTap={{ scale: 0.9 }}
+          onClick={() => setIsCartOpen(true)}
+          className="fixed bottom-20 right-6 w-16 h-16 bg-[#0F0F0F] text-white rounded-full shadow-2xl z-[40] flex items-center justify-center group"
+        >
+          <div className="relative">
+            <ShoppingCart size={24} />
+            {cart.length > 0 && (
+              <span className="absolute -top-2 -right-2 w-5 h-5 bg-[#C5A059] rounded-full flex items-center justify-center text-[10px] font-black shadow-lg ring-2 ring-white animate-bounce-short">
+                {cart.length}
+              </span>
+            )}
+          </div>
+        </motion.button>
+      )}
 
       {/* Slide-In Checkout Panel */}
       <div className={cn(
-        "fixed inset-y-0 right-0 z-[60] lg:relative lg:inset-auto lg:z-20",
-        "w-[320px] xs:w-[400px] sm:w-[500px] lg:w-[500px] bg-white border-l border-gray-100 flex flex-col shadow-[-50px_0_100px_rgba(0,0,0,0.1)] transition-transform duration-500 ease-spring",
-        isCartOpen ? "translate-x-0" : "translate-x-full lg:translate-x-0"
+        "fixed inset-y-0 right-0 z-[60]",
+        !isMobile && "relative inset-auto z-20 translate-x-0",
+        "w-[320px] xs:w-[400px] sm:w-[500px] bg-white border-l border-gray-100 flex flex-col shadow-[-50px_0_100px_rgba(0,0,0,0.1)] transition-transform duration-500 ease-spring",
+        isMobile ? (isCartOpen ? "translate-x-0" : "translate-x-full") : "w-[500px]"
       )}>
         {/* Mobile Close Handle */}
-        <button 
-          onClick={() => setIsCartOpen(false)}
-          className="lg:hidden absolute -left-12 top-6 w-12 h-12 bg-white rounded-l-2xl border-l border-t border-b border-gray-100 flex items-center justify-center text-gray-400"
-        >
-          <X size={20} />
-        </button>
+        {isMobile && (
+          <button 
+            onClick={() => setIsCartOpen(false)}
+            className="absolute -left-12 top-6 w-12 h-12 bg-white rounded-l-2xl border-l border-t border-b border-gray-100 flex items-center justify-center text-gray-400"
+          >
+            <X size={20} />
+          </button>
+        )}
 
         <div className="p-6 md:p-10 border-b border-gray-50 bg-white sticky top-0 z-10">
            <div className="flex items-center justify-between">
@@ -1013,7 +1095,7 @@ export default function POS() {
                 className="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl md:rounded-2xl transition-all group/trash relative animate-pulse-short"
                 title="New Transaction / Clear Cart [Alt+N]"
               >
-                <Trash2 size={20} md:size={24} />
+                <Trash2 size={isMobile ? 20 : 24} />
                 <span className="absolute -bottom-1 right-1/2 translate-x-1/2 translate-y-full bg-black text-white text-[7.5px] font-mono px-1.5 py-0.5 rounded opacity-0 group-hover/trash:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 shadow-lg">Alt+N</span>
               </button>
            </div>
@@ -1044,7 +1126,7 @@ export default function POS() {
           {cart.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-gray-200 gap-6 md:gap-8 opacity-20">
                <div className="w-24 h-24 md:w-32 md:h-32 rounded-full border-4 border-dashed border-gray-200 flex items-center justify-center">
-                  <ShoppingCart size={48} md:size={64} strokeWidth={1} />
+                  <ShoppingCart size={isMobile ? 48 : 64} strokeWidth={1} />
                </div>
                <p className="text-[9px] md:text-[10px] font-black uppercase tracking-[0.5em] md:tracking-[0.8em] text-center">Standby Sequence</p>
             </div>
@@ -1058,7 +1140,7 @@ export default function POS() {
                 className="flex gap-4 md:gap-6 p-4 md:p-6 rounded-[2rem] md:rounded-[2.5rem] bg-gray-50/50 border border-transparent hover:border-gray-100 transition-all group relative"
               >
                 <div className="w-12 h-12 md:w-16 md:h-16 bg-white rounded-xl md:rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center text-gray-300 group-hover:scale-110 transition-transform">
-                  <Package size={20} md:size={28} />
+                  <Package size={isMobile ? 20 : 28} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-[11px] md:text-[13px] font-black uppercase tracking-tight truncate flex items-center gap-2 md:gap-3">
@@ -1101,9 +1183,9 @@ export default function POS() {
 
                   <div className="flex items-center gap-4 mt-4 md:mt-5">
                     <div className="flex items-center gap-3 md:gap-4 bg-white px-2 md:px-3 py-1 md:py-1.5 rounded-lg md:rounded-xl border border-gray-100 shadow-sm">
-                      <button onClick={() => updateQuantity(item.productId, item.quantity - 1)} className="text-gray-300 hover:text-black transition-colors"><Minus size={12} md:size={14} /></button>
+                      <button onClick={() => updateQuantity(item.productId, item.quantity - 1)} className="text-gray-300 hover:text-black transition-colors"><Minus size={isMobile ? 12 : 14} /></button>
                       <span className="text-[10px] md:text-xs font-black min-w-[1ch] text-center">{item.quantity}</span>
-                      <button onClick={() => updateQuantity(item.productId, item.quantity + 1)} className="text-black transition-colors"><Plus size={12} md:size={14} strokeWidth={3} /></button>
+                      <button onClick={() => updateQuantity(item.productId, item.quantity + 1)} className="text-black transition-colors"><Plus size={isMobile ? 12 : 14} strokeWidth={3} /></button>
                     </div>
                   </div>
                 </div>
@@ -1112,7 +1194,7 @@ export default function POS() {
                      {formatCurrency(item.totalWithVat)}
                    </div>
                    <button onClick={() => removeFromCart(item.productId)} className="p-2 text-gray-200 hover:text-red-500 transition-colors">
-                      <Trash2 size={16} md:size={20} />
+                      <Trash2 size={isMobile ? 16 : 20} />
                    </button>
                 </div>
               </motion.div>
@@ -1145,33 +1227,91 @@ export default function POS() {
 
           <div className="grid grid-cols-2 gap-3 md:gap-4">
             <button 
-              onClick={() => setPaymentMethod(PaymentMethod.CASH)}
+              onClick={() => {
+                setPaymentMethod(PaymentMethod.CASH);
+                setReceivedAmount(0); // Reset on switch
+              }}
               className={cn(
                 "flex flex-col items-center gap-2 p-4 md:p-6 rounded-2xl md:rounded-[2rem] border-2 transition-all",
                 paymentMethod === PaymentMethod.CASH ? "bg-[#0F0F0F] text-white border-transparent shadow-xl" : "bg-white text-gray-400 border-transparent"
               )}
             >
-              <Banknote size={20} md:size={22} className={cn(paymentMethod === PaymentMethod.CASH ? "text-[#C5A059]" : "text-gray-200")} />
+              <Banknote size={22} className={cn(paymentMethod === PaymentMethod.CASH ? "text-[#C5A059]" : "text-gray-200")} />
               <span className="text-[8px] md:text-[10px] font-black uppercase tracking-widest">Cash</span>
             </button>
             <button 
-              onClick={() => setPaymentMethod(PaymentMethod.CARD)}
+              onClick={() => {
+                setPaymentMethod(PaymentMethod.CARD);
+                setReceivedAmount(0); // Reset on switch
+              }}
               className={cn(
                 "flex flex-col items-center gap-2 p-4 md:p-6 rounded-2xl md:rounded-[2rem] border-2 transition-all",
                 paymentMethod === PaymentMethod.CARD ? "bg-[#0F0F0F] text-white border-transparent shadow-xl" : "bg-white text-gray-400 border-transparent"
               )}
             >
-              <CreditCard size={20} md:size={22} className={cn(paymentMethod === PaymentMethod.CARD ? "text-[#C5A059]" : "text-gray-200")} />
+              <CreditCard size={22} className={cn(paymentMethod === PaymentMethod.CARD ? "text-[#C5A059]" : "text-gray-200")} />
               <span className="text-[8px] md:text-[10px] font-black uppercase tracking-widest">Card</span>
             </button>
           </div>
+
+          {paymentMethod === PaymentMethod.CASH && (
+            <motion.div 
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="space-y-3 bg-white p-4 rounded-2xl border border-gray-100"
+            >
+              <div className="flex justify-between items-center">
+                <label className="text-[9px] font-black uppercase tracking-widest text-gray-500">Tendered Cash (AED)</label>
+                {receivedAmount > 0 && (
+                  <span className="text-[9px] font-mono font-bold text-green-600">
+                    Change: {formatCurrency(changeAmount)}
+                  </span>
+                )}
+              </div>
+              <div className="relative">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={receivedAmount || ''}
+                  onChange={(e) => setReceivedAmount(Math.max(0, parseFloat(e.target.value) || 0))}
+                  placeholder="0.00"
+                  className="w-full text-right text-lg font-bold px-4 py-3 bg-gray-50/50 border border-gray-100 rounded-xl focus:border-[#C5A059] outline-none font-mono text-black"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setReceivedAmount(grandTotal)}
+                  className="text-[8px] font-black uppercase tracking-wider px-3 py-1.5 bg-[#C5A059]/10 text-[#C5A059] hover:bg-[#C5A059]/20 rounded-lg transition-all cursor-pointer"
+                >
+                  Exact Amount
+                </button>
+                {[50, 100, 200, 500, 1000].map((val) => {
+                  if (val >= grandTotal) {
+                    return (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => setReceivedAmount(val)}
+                        className="text-[8px] font-mono font-bold px-3 py-1.5 bg-gray-50 text-gray-600 hover:bg-gray-100 rounded-lg transition-all cursor-pointer"
+                      >
+                        {formatCurrency(val)}
+                      </button>
+                    );
+                  }
+                  return null;
+                })}
+              </div>
+            </motion.div>
+          )}
 
           <button 
             disabled={cart.length === 0}
             onClick={handleCheckout}
             className="w-full bg-[#0F0F0F] text-white py-6 md:py-8 rounded-2xl md:rounded-[2.5rem] font-black uppercase tracking-[0.3em] md:tracking-[0.5em] text-[10px] md:text-sm flex items-center justify-center gap-4 md:gap-6 active:scale-95 transition-all disabled:opacity-30 shadow-[0_20px_40px_rgba(0,0,0,0.2)]"
           >
-            <Receipt size={18} md:size={24} strokeWidth={2.5} />
+            <Receipt size={isMobile ? 18 : 24} strokeWidth={2.5} />
             SYNC TRANSACTION
           </button>
         </div>
@@ -2210,8 +2350,8 @@ export default function POS() {
                    <div id="receipt-content" className="w-full bg-white p-10 shadow-sm border border-gray-100 rounded-2xl flex flex-col items-center text-center font-mono text-[10px] space-y-6">
                       <div className="space-y-1">
                          <h2 className="text-[10px] font-black tracking-[0.4em] text-gray-400 mb-2">TAX INVOICE</h2>
-                         <h2 className="text-xl font-black uppercase leading-tight">{profile?.companyName || 'SCENTS & SOULS PERFUME LAB'}</h2>
-                         <p className="font-bold">{profile?.address}</p>
+                         <h2 className="text-xl font-black uppercase leading-tight">{profile?.companyName || 'RRV PERFUME'}</h2>
+                         <p className="font-bold">{profile?.address || 'RRV TRADING LLC, Business Bay, Dubai, UAE'}</p>
                          <div className="flex items-center justify-center gap-2 bg-gray-50 px-3 py-1 rounded-full mt-2 font-black border border-gray-100">
                             TRN: <span className="text-black">{profile?.trn || '100XXXXXXXXXXXX'}</span>
                          </div>

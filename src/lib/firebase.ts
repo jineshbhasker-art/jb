@@ -53,8 +53,14 @@ interface FirestoreErrorInfo {
 }
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errMessage = error instanceof Error ? error.message : String(error);
+  const isPermissionError = 
+    errMessage.toLowerCase().includes('permission') || 
+    errMessage.toLowerCase().includes('denied');
+  const isOfflineError = errMessage.toLowerCase().includes('offline');
+
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: errMessage,
     authInfo: {
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,
@@ -69,8 +75,16 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     operationType,
     path
   }
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  
+  if (isOfflineError) {
+    console.warn('Firestore Offline:', JSON.stringify(errInfo));
+  } else {
+    console.error('Firestore Error: ', JSON.stringify(errInfo));
+  }
+
+  if (isPermissionError) {
+    throw new Error(JSON.stringify(errInfo));
+  }
 }
 
 // Test connection strictly as requested
@@ -78,8 +92,11 @@ async function testConnection() {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {
-    if(error instanceof Error && error.message.includes('the client is offline')) {
-      console.error("Please check your Firebase configuration.");
+    const errMessage = error instanceof Error ? error.message : String(error);
+    if (errMessage.toLowerCase().includes('offline')) {
+      console.warn("Client is currently offline. Operating in offline/cached mode.");
+    } else {
+      console.error("Please check your Firebase configuration. Connection test failed:", errMessage);
     }
   }
 }

@@ -54,8 +54,8 @@ export const PrintInvoice = React.forwardRef<HTMLDivElement, InvoiceProps>(({ sa
   return (
     <div ref={ref}>
       <PrintTemplates
-        businessProfile={profile || defaultProfile}
-        invoiceType="sales"
+        profile={profile || defaultProfile}
+        type="sales_invoice"
         data={sale}
       />
     </div>

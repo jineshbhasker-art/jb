@@ -28,13 +28,18 @@ import {
   UserCheck,
   Wifi,
   WifiOff,
-  Film
+  Film,
+  Monitor,
+  Smartphone,
+  RefreshCw
 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { useAuth } from './AuthContext';
 import { businessProfileService, productsService, concentrationAlertRulesService } from './lib/dbService';
+import { getQueue, syncQueue } from './lib/offlineQueue';
 import { BusinessProfile, Product, ConcentrationAlertRule, ConcentrationAlert } from './types';
 import { ScentAndSoulLogo } from './components/ScentAndSoulLogo';
+import { RRVLogo } from './components/RRVLogo';
 
 interface SidebarItemProps {
   icon: any;
@@ -42,15 +47,16 @@ interface SidebarItemProps {
   active: boolean;
   onClick: () => void;
   collapsed: boolean;
+  badgeCount?: number;
 }
 
-const SidebarItem: React.FC<SidebarItemProps> = ({ icon: Icon, label, active, onClick, collapsed }) => (
+const SidebarItem: React.FC<SidebarItemProps> = ({ icon: Icon, label, active, onClick, collapsed, badgeCount }) => (
   <button
     onClick={onClick}
     className={cn(
       "w-full flex items-center gap-3 px-4 py-3.5 transition-all duration-200 group relative",
       active 
-        ? "text-black font-semibold" 
+        ? "text-black font-semibold bg-gray-50/70" 
         : "text-gray-400 hover:text-black hover:bg-gray-50/50"
     )}
   >
@@ -60,15 +66,27 @@ const SidebarItem: React.FC<SidebarItemProps> = ({ icon: Icon, label, active, on
         className="absolute left-0 w-1.5 h-8 bg-black rounded-r-full"
       />
     )}
-    <Icon size={18} strokeWidth={active ? 2.5 : 2} />
+    <div className="relative">
+      <Icon size={18} strokeWidth={active ? 2.5 : 2} />
+      {collapsed && badgeCount !== undefined && badgeCount > 0 && (
+        <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-600 rounded-full ring-2 ring-white animate-pulse" />
+      )}
+    </div>
     {!collapsed && (
-      <motion.span 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="text-[11px] font-black uppercase tracking-widest"
-      >
-        {label}
-      </motion.span>
+      <div className="flex items-center justify-between flex-1 min-w-0">
+        <motion.span 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="text-[11px] font-black uppercase tracking-widest truncate"
+        >
+          {label}
+        </motion.span>
+        {badgeCount !== undefined && badgeCount > 0 && (
+          <span className="ml-2 px-1.5 py-0.5 text-[8px] font-black bg-red-600 text-white rounded-full leading-none animate-pulse shrink-0">
+            {badgeCount}
+          </span>
+        )}
+      </div>
     )}
   </button>
 );
@@ -89,23 +107,47 @@ export default function AppLayout({ children, activeTab, setActiveTab }: AppLayo
   const [alertRules, setAlertRules] = React.useState<ConcentrationAlertRule[]>([]);
   const [showNotificationsDropdown, setShowNotificationsDropdown] = React.useState(false);
   const [isOnline, setIsOnline] = React.useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [queueCount, setQueueCount] = React.useState(0);
+  const [isSyncing, setIsSyncing] = React.useState(false);
+
+  const updateQueueCount = React.useCallback(() => {
+    getQueue().then(queue => {
+      setQueueCount(queue.length);
+    }).catch(err => {
+      console.error("Failed to read offline queue size:", err);
+    });
+  }, []);
 
   React.useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
+    updateQueueCount();
+
+    const handleOnline = () => {
+      setIsOnline(true);
+      setIsSyncing(true);
+      syncQueue().then(() => {
+        updateQueueCount();
+        setIsSyncing(false);
+      }).catch(err => {
+        console.error("Auto-sync error on reconnect:", err);
+        setIsSyncing(false);
+      });
+    };
     const handleOffline = () => setIsOnline(false);
 
     if (typeof window !== 'undefined') {
       window.addEventListener('online', handleOnline);
       window.addEventListener('offline', handleOffline);
+      window.addEventListener('offline-queue-changed', updateQueueCount);
     }
 
     return () => {
       if (typeof window !== 'undefined') {
         window.removeEventListener('online', handleOnline);
         window.removeEventListener('offline', handleOffline);
+        window.removeEventListener('offline-queue-changed', updateQueueCount);
       }
     };
-  }, []);
+  }, [updateQueueCount]);
 
   React.useEffect(() => {
     const unsubProfile = businessProfileService.subscribe(setProfile);
@@ -182,19 +224,19 @@ export default function AppLayout({ children, activeTab, setActiveTab }: AppLayo
   }, [sysCalibration.isMobile]);
 
   const menuItems = [
-    { id: 'dashboard', label: 'Perfume Dashboard', icon: LayoutDashboard },
-    { id: 'pos', label: 'Scent Register', icon: ShoppingCart },
-    { id: 'repairs', label: 'Fragrance LAB', icon: Sparkles },
-    { id: 'brand-lab', label: 'Brand Video Lab', icon: Film },
-    { id: 'inventory', label: 'Perfume Vault', icon: Package },
-    { id: 'expenses', label: 'LAB Expenses', icon: CreditCard },
-    { id: 'customers', label: 'Connoisseurs / Clients', icon: Users },
-    { id: 'staff', label: 'Staff Portal', icon: UserCheck },
-    { id: 'suppliers', label: 'Scent Distributors', icon: Truck },
-    { id: 'accounting', label: 'Ledger Ledger', icon: Calculator },
-    { id: 'vouchers', label: 'Campaign Vouchers', icon: Ticket },
-    { id: 'reports', label: 'Market Analytics', icon: BarChart3 },
-    { id: 'settings', label: 'LAB Config', icon: Settings },
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'pos', label: 'POS Dashboard', icon: ShoppingCart },
+    { id: 'repairs', label: 'Fragrance Lab', icon: Sparkles },
+    { id: 'brand-lab', label: 'Brand Video', icon: Film },
+    { id: 'inventory', label: 'Inventory', icon: Package },
+    { id: 'expenses', label: 'Expenses', icon: CreditCard },
+    { id: 'customers', label: 'Customers', icon: Users },
+    { id: 'staff', label: 'Staff', icon: UserCheck },
+    { id: 'suppliers', label: 'Suppliers', icon: Truck },
+    { id: 'accounting', label: 'Accounting', icon: Calculator },
+    { id: 'vouchers', label: 'Vouchers', icon: Ticket },
+    { id: 'reports', label: 'Reports', icon: BarChart3 },
+    { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
   // System-wide calibration adjustment
@@ -206,61 +248,73 @@ export default function AppLayout({ children, activeTab, setActiveTab }: AppLayo
 
   const toggleSidebar = () => setCollapsed(!collapsed);
 
+  const lowStockCount = React.useMemo(() => {
+    return allProducts.filter(p => p.isActive && p.stockQuantity <= (p.minStockLevel || 5)).length;
+  }, [allProducts]);
+
   return (
     <div className={cn(
       "flex h-screen bg-[#FDFDFD] overflow-hidden selection:bg-black selection:text-white",
       layoutCalibration.paddingBottom
     )}>
       {/* Dynamic Sliding Sidebar (Desktop) */}
-      <aside 
-        className={cn(
-          "hidden lg:flex flex-col border-r border-[#F0F0F0] bg-white transition-all duration-300 ease-in-out relative z-30 shadow-[4px_0_24px_rgba(0,0,0,0.02)]",
-          collapsed ? "w-20" : "w-64"
-        )}
-      >
-        <div className="p-6 flex items-center gap-3 h-20 shrink-0">
-          {profile?.logoBase64 ? (
-            <div className="w-8 h-8 rounded-lg overflow-hidden shrink-0 border border-gray-100 flex items-center justify-center p-0.5 bg-white">
-               <img src={profile.logoBase64} alt="Logo" className="w-full h-full object-contain" />
-            </div>
-          ) : (
-            <div className="w-10 h-10 shrink-0">
-              <ScentAndSoulLogo size="sm" showText={false} />
-            </div>
+      {!sysCalibration.isMobile && (
+        <aside 
+          className={cn(
+            "flex flex-col border-r border-[#F0F0F0] bg-white transition-all duration-300 ease-in-out relative z-30 shadow-[4px_0_24px_rgba(0,0,0,0.02)]",
+            collapsed ? "w-20" : "w-64"
           )}
-          {!collapsed && (
-            <motion.div 
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              className="font-display text-[15px] font-black truncate tracking-tighter uppercase"
+        >
+          <div className="p-5 flex items-center gap-3 h-20 shrink-0 border-b border-gray-50/50">
+            {profile?.logoBase64 ? (
+              <div className="w-9 h-9 rounded-lg overflow-hidden shrink-0 border border-gray-100 flex items-center justify-center p-0.5 bg-white shadow-sm">
+                 <img src={profile.logoBase64} alt="Logo" className="w-full h-full object-contain" />
+              </div>
+            ) : (
+              <div className="w-10 h-10 shrink-0 flex items-center justify-center">
+                <RRVLogo size="xs" showText={false} lightMode={true} />
+              </div>
+            )}
+            {!collapsed && (
+              <motion.div 
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="flex flex-col min-w-0"
+              >
+                <div className="font-display text-[14px] font-black truncate tracking-tighter uppercase leading-tight">
+                  {profile?.companyName || 'RRV PERFUME'}
+                </div>
+                <div className="text-[7.5px] font-bold text-gray-400 uppercase tracking-widest truncate leading-tight mt-0.5">
+                  A Division of RRV TRADING LLC
+                </div>
+              </motion.div>
+            )}
+          </div>
+
+          <nav className="flex-1 mt-2 overflow-y-auto no-scrollbar py-4">
+            {menuItems.map((item) => (
+              <SidebarItem
+                key={item.id}
+                icon={item.icon}
+                label={item.label}
+                active={activeTab === item.id}
+                onClick={() => setActiveTab(item.id)}
+                collapsed={collapsed}
+                badgeCount={item.id === 'dashboard' || item.id === 'inventory' ? lowStockCount : undefined}
+              />
+            ))}
+          </nav>
+
+          <div className="p-4 border-t border-[#F0F0F0] bg-gray-50/10">
+            <button 
+              onClick={toggleSidebar}
+              className="w-full flex items-center justify-center lg:justify-start gap-3 px-3 py-3 text-gray-400 hover:text-black hover:bg-white hover:shadow-sm rounded-xl transition-all active:scale-95"
             >
-              {profile?.companyName || 'SCENTS & SOULS PERFUME LAB'}
-            </motion.div>
-          )}
-        </div>
-
-        <nav className="flex-1 mt-2 overflow-y-auto no-scrollbar py-4">
-          {menuItems.map((item) => (
-            <SidebarItem
-              key={item.id}
-              icon={item.icon}
-              label={item.label}
-              active={activeTab === item.id}
-              onClick={() => setActiveTab(item.id)}
-              collapsed={collapsed}
-            />
-          ))}
-        </nav>
-
-        <div className="p-4 border-t border-[#F0F0F0] bg-gray-50/10">
-          <button 
-            onClick={toggleSidebar}
-            className="w-full flex items-center justify-center lg:justify-start gap-3 px-3 py-3 text-gray-400 hover:text-black hover:bg-white hover:shadow-sm rounded-xl transition-all active:scale-95"
-          >
-            {collapsed ? <ChevronRight size={18} /> : <div className="flex items-center gap-3"><ChevronLeft size={18} /> <span className="text-[10px] font-black uppercase tracking-widest">Collapse Node</span></div>}
-          </button>
-        </div>
-      </aside>
+              {collapsed ? <ChevronRight size={18} /> : <div className="flex items-center gap-3"><ChevronLeft size={18} /> <span className="text-[10px] font-black uppercase tracking-widest">Collapse Node</span></div>}
+            </button>
+          </div>
+        </aside>
+      )}
 
       {/* Main Content Integration */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
@@ -271,33 +325,39 @@ export default function AppLayout({ children, activeTab, setActiveTab }: AppLayo
           layoutCalibration.paddingTop
         )}>
           <div className="flex items-center gap-4 flex-1">
-            <button 
-              className="lg:hidden w-10 h-10 flex items-center justify-center hover:bg-gray-100 rounded-xl text-black transition-all active:scale-90"
-              onClick={() => setIsMobileMenuOpen(true)}
-            >
-              <Menu size={20} strokeWidth={2.5} />
-            </button>
-            <div className={`relative max-w-[280px] w-full hidden md:block`}>
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-              <input 
-                type="text" 
-                placeholder="PROXIMITY SEARCH..." 
-                className="w-full pl-12 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-2xl text-[10px] font-black uppercase tracking-widest focus:ring-1 focus:ring-black/10 focus:bg-white focus:border-black/20 focus:outline-none transition-all placeholder:text-gray-300"
-              />
-            </div>
+            {sysCalibration.isMobile && (
+              <button 
+                className="w-10 h-10 flex items-center justify-center hover:bg-gray-100 rounded-xl text-black transition-all active:scale-90 animate-fadeIn"
+                onClick={() => setIsMobileMenuOpen(true)}
+              >
+                <Menu size={20} strokeWidth={2.5} />
+              </button>
+            )}
+            {!sysCalibration.isMobile && (
+              <div className="relative max-w-[280px] w-full animate-fadeIn">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                <input 
+                  type="text" 
+                  placeholder="PROXIMITY SEARCH..." 
+                  className="w-full pl-12 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-2xl text-[10px] font-black uppercase tracking-widest focus:ring-1 focus:ring-black/10 focus:bg-white focus:border-black/20 focus:outline-none transition-all placeholder:text-gray-300"
+                />
+              </div>
+            )}
             {/* Contextual Identification */}
-            <div className="lg:hidden flex items-center gap-2">
-               {profile?.logoBase64 ? (
-                 <img src={profile.logoBase64} alt="L" className="w-6 h-6 object-contain grayscale opacity-20" />
-               ) : (
-                 <div className="w-7 h-7 shrink-0 opacity-80">
-                   <ScentAndSoulLogo size="sm" showText={false} />
+            {sysCalibration.isMobile && (
+              <div className="flex items-center gap-2 animate-fadeIn">
+                 {profile?.logoBase64 ? (
+                   <img src={profile.logoBase64} alt="L" className="w-6 h-6 object-contain grayscale opacity-20" />
+                 ) : (
+                   <div className="w-7 h-7 shrink-0 opacity-80">
+                     <ScentAndSoulLogo size="sm" showText={false} />
+                   </div>
+                 )}
+                 <div className="font-display font-black text-sm uppercase tracking-tighter truncate max-w-[120px]">
+                   {menuItems.find(i => i.id === activeTab)?.label}
                  </div>
-               )}
-               <div className="font-display font-black text-sm uppercase tracking-tighter truncate max-w-[120px]">
-                 {menuItems.find(i => i.id === activeTab)?.label}
-               </div>
-            </div>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-3">
@@ -397,19 +457,96 @@ export default function AppLayout({ children, activeTab, setActiveTab }: AppLayo
               </AnimatePresence>
             </div>
 
+            {/* Viewport Calibration Node Selector */}
+            <div className="flex items-center gap-1 bg-gray-100/80 p-1 rounded-xl border border-gray-100/50 shrink-0">
+              <button
+                type="button"
+                onClick={() => sysCalibration.setCalibrationMode('auto')}
+                className={cn(
+                  "px-2.5 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all flex items-center gap-1 cursor-pointer select-none",
+                  sysCalibration.calibrationMode === 'auto' 
+                    ? "bg-white text-black shadow-sm font-black" 
+                    : "text-gray-400 hover:text-gray-600"
+                )}
+                title="Auto-Adapt View Calibration"
+              >
+                <RefreshCw size={11} className={cn(sysCalibration.calibrationMode === 'auto' && "animate-spin-slow")} />
+                <span className="hidden sm:inline">AUTO</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => sysCalibration.setCalibrationMode('desktop')}
+                className={cn(
+                  "px-2.5 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all flex items-center gap-1 cursor-pointer select-none",
+                  sysCalibration.calibrationMode === 'desktop' 
+                    ? "bg-white text-black shadow-sm font-black" 
+                    : "text-gray-400 hover:text-gray-600"
+                )}
+                title="Force Desktop View Calibration"
+              >
+                <Monitor size={11} />
+                <span className="hidden sm:inline">DESKTOP</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => sysCalibration.setCalibrationMode('mobile')}
+                className={cn(
+                  "px-2.5 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all flex items-center gap-1 cursor-pointer select-none",
+                  sysCalibration.calibrationMode === 'mobile' 
+                    ? "bg-white text-black shadow-sm font-black" 
+                    : "text-gray-400 hover:text-gray-600"
+                )}
+                title="Force Mobile View Calibration"
+              >
+                <Smartphone size={11} />
+                <span className="hidden sm:inline">MOBILE</span>
+              </button>
+            </div>
+
             {/* Online / Offline Sync State Badge */}
-            <div className={cn(
-              "flex items-center gap-2 px-3 py-1.5 rounded-xl border text-[8px] font-black uppercase tracking-widest shrink-0 transition-all",
-              isOnline 
-                ? "bg-green-50 border-green-100 text-green-600" 
-                : "bg-red-50 border-red-100 text-red-600 animate-pulse"
-            )}>
-              {isOnline ? <Wifi size={12} className="text-green-500" /> : <WifiOff size={12} className="text-red-500" />}
-              <span className="hidden xs:inline">{isOnline ? "SYNC ONLINE" : "OFFLINE VAULT"}</span>
+            <div className="flex items-center gap-2 shrink-0">
+              <div className={cn(
+                "flex items-center gap-2 px-3 py-1.5 rounded-xl border text-[8px] font-black uppercase tracking-widest transition-all",
+                isOnline 
+                  ? "bg-green-50 border-green-100 text-green-600" 
+                  : "bg-red-50 border-red-100 text-red-600 animate-pulse"
+              )}>
+                {isOnline ? <Wifi size={12} className="text-green-500" /> : <WifiOff size={12} className="text-red-500" />}
+                <span className="hidden xs:inline">{isOnline ? "SYNC ONLINE" : "OFFLINE VAULT"}</span>
+              </div>
+
+              {/* Pending Queue Count and Manual Sync Action */}
+              {queueCount > 0 && (
+                <button
+                  type="button"
+                  disabled={isSyncing || !isOnline}
+                  onClick={async () => {
+                    setIsSyncing(true);
+                    try {
+                      await syncQueue();
+                      updateQueueCount();
+                    } catch (e) {
+                      console.error("Manual sync failed:", e);
+                    } finally {
+                      setIsSyncing(false);
+                    }
+                  }}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[8px] font-black uppercase tracking-widest border transition-all cursor-pointer shadow-sm select-none",
+                    isOnline 
+                      ? "bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100 animate-pulse" 
+                      : "bg-gray-50 border-gray-100 text-gray-400 cursor-not-allowed"
+                  )}
+                  title={isOnline ? "Click to Sync Queued Transactions Now" : "Connect to internet to sync transactions"}
+                >
+                  <RefreshCw size={11} className={cn(isSyncing && "animate-spin")} />
+                  <span>{queueCount} PENDING</span>
+                </button>
+              )}
             </div>
             
             <div className="flex items-center gap-3 bg-gray-50/50 rounded-2xl p-1 md:pl-4 md:pr-1 border border-gray-100/50">
-              <div className="text-right hidden md:block pr-2">
+              <div className={cn("text-right pr-2", sysCalibration.isMobile ? "hidden" : "hidden md:block")}>
                 <div className="text-[10px] font-black leading-none uppercase tracking-tight">{user?.name}</div>
                 <div className="text-[8px] text-gray-400 uppercase tracking-widest mt-1 font-black leading-none">{user?.role}</div>
               </div>
@@ -432,18 +569,19 @@ export default function AppLayout({ children, activeTab, setActiveTab }: AppLayo
         </header>
 
         {/* Global Viewport Frame */}
-        <div className="flex-1 overflow-y-auto bg-[#FDFDFD] no-scrollbar relative p-4 md:p-8">
+        <div className={cn(
+          "flex-1 overflow-y-auto bg-[#FDFDFD] no-scrollbar relative p-4 md:p-8",
+          sysCalibration.isMobile && "pb-24" // Extra space to prevent bottom navigation overlap
+        )}>
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
-              initial={{ opacity: 0, x: 20 }}
+              initial={{ opacity: 0, x: 10 }}
               animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
+              exit={{ opacity: 0, x: -10 }}
               transition={{ 
-                type: 'spring',
-                stiffness: 300,
-                damping: 30,
-                mass: 0.8
+                duration: 0.25,
+                ease: "easeInOut"
               }}
               className="max-w-[1600px] mx-auto w-full"
             >
@@ -453,10 +591,52 @@ export default function AppLayout({ children, activeTab, setActiveTab }: AppLayo
         </div>
       </main>
 
+      {/* Dynamic Mobile Workflow Bottom Navigation */}
+      {sysCalibration.isMobile && (
+        <div className="fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-[#F0F0F0] flex items-center justify-around px-2 z-40 shadow-[0_-4px_24px_rgba(0,0,0,0.04)] pb-[env(safe-area-inset-bottom,0px)]">
+          {[
+            { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+            { id: 'pos', label: 'Register', icon: ShoppingCart },
+            { id: 'repairs', label: 'Fragrance Lab', icon: Sparkles },
+            { id: 'inventory', label: 'Vault', icon: Package },
+          ].map(item => {
+            const active = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => setActiveTab(item.id)}
+                className={cn(
+                  "flex flex-col items-center justify-center flex-1 h-full py-1 gap-1 text-gray-400 relative transition-all active:scale-90 cursor-pointer",
+                  active && "text-black"
+                )}
+              >
+                {active && (
+                  <motion.div 
+                    layoutId="mobile-bottom-active-indicator"
+                    className="absolute top-0 w-8 h-1 bg-black rounded-b-full"
+                  />
+                )}
+                <item.icon size={18} strokeWidth={active ? 2.5 : 2} className={cn(active && "text-black")} />
+                <span className="text-[8px] font-black uppercase tracking-wider">{item.label}</span>
+              </button>
+            );
+          })}
+          
+          {/* More button */}
+          <button
+            onClick={() => setIsMobileMenuOpen(true)}
+            className="flex flex-col items-center justify-center flex-1 h-full py-1 gap-1 text-gray-400 active:scale-90 cursor-pointer"
+          >
+            <Menu size={18} strokeWidth={2} />
+            <span className="text-[8px] font-black uppercase tracking-wider">More</span>
+          </button>
+        </div>
+      )}
+
       {/* Advanced Mobile Slide Panel */}
       <AnimatePresence>
-        {isMobileMenuOpen && (
-          <div className="fixed inset-0 z-[100] lg:hidden">
+        {isMobileMenuOpen && sysCalibration.isMobile && (
+          <div className="fixed inset-0 z-[100]">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -471,13 +651,18 @@ export default function AppLayout({ children, activeTab, setActiveTab }: AppLayo
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
               className="absolute inset-y-0 left-0 w-[280px] bg-white shadow-[20px_0_80px_rgba(0,0,0,0.3)] flex flex-col"
             >
-              <div className="p-8 flex items-center justify-between border-b border-gray-50">
+              <div className="p-6 flex items-center justify-between border-b border-gray-50">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center text-white font-black text-sm">
-                    {profile?.companyName?.[0] || 'Q'}
+                  <div className="w-10 h-10 bg-black rounded-xl flex items-center justify-center p-1.5 shadow-sm">
+                    <RRVLogo size="xs" showText={false} lightMode={false} />
                   </div>
-                  <div className="font-display text-sm font-black tracking-tighter uppercase whitespace-nowrap overflow-hidden text-ellipsis max-w-[160px]">
-                    {profile?.companyName || 'SCENTS & SOULS PERFUME LAB'}
+                  <div className="min-w-0">
+                    <div className="font-display text-sm font-black tracking-tighter uppercase whitespace-nowrap overflow-hidden text-ellipsis max-w-[150px] leading-tight">
+                      {profile?.companyName || 'RRV PERFUME'}
+                    </div>
+                    <div className="text-[7px] text-gray-400 font-bold tracking-widest uppercase truncate leading-tight mt-0.5">
+                      A Division of RRV TRADING LLC
+                    </div>
                   </div>
                 </div>
                 <button 
